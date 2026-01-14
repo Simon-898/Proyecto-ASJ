@@ -4,47 +4,44 @@ import jakarta.persistence.*;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "ordenes")
 public class Orden {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Número de la Orden de Compra
-    @Column(name = "numero_orden", nullable = false)
+    // OC / Número orden de compra
     private String numeroOrden;
 
-    // OT (Orden de Trabajo)
-    @Column(nullable = false)
+    // OT
     private String ot;
 
-    // Fecha de llegada / fecha asociada a la OC (según como la trabajen)
-    @Column(name = "fecha_llegada", nullable = false)
+    // Fecha del documento (emisión) -> la guardamos aquí
     private LocalDate fechaLlegada;
 
-    // Monto en CLP
-    @Column(name = "monto_clp", nullable = false)
+    // Monto NETO CLP
     private Long montoClp;
 
-    // Flujo real del proceso
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private EstadoOrden estado = EstadoOrden.OC_RECIBIDA;
+    private EstadoOrden estado;
 
-    // HES (llega por correo cuando corresponde)
-    @Column
+    // HES (cuando llegue)
     private String hes;
 
-    @Column(length = 500)
+    // Observación (texto)
+    @Column(length = 1000)
     private String observacion;
 
-    @Column(name = "oc_pdf")
+    // Nombre del PDF guardado en disco
     private String ocPdf;
 
+    // ✅ NUEVO: cantidad transpaletas (ej: 12)
+    private Integer cantidadTranspaletas;
 
-    // Getters/Setters
+    public Orden() {}
+
     public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
 
     public String getNumeroOrden() { return numeroOrden; }
     public void setNumeroOrden(String numeroOrden) { this.numeroOrden = numeroOrden; }
@@ -67,10 +64,9 @@ public class Orden {
     public String getObservacion() { return observacion; }
     public void setObservacion(String observacion) { this.observacion = observacion; }
 
-    public String getOcPdf() {
-    return ocPdf;}
+    public String getOcPdf() { return ocPdf; }
+    public void setOcPdf(String ocPdf) { this.ocPdf = ocPdf; }
 
-    public void setOcPdf(String ocPdf) {
-    this.ocPdf = ocPdf;}
-
+    public Integer getCantidadTranspaletas() { return cantidadTranspaletas; }
+    public void setCantidadTranspaletas(Integer cantidadTranspaletas) { this.cantidadTranspaletas = cantidadTranspaletas; }
 }

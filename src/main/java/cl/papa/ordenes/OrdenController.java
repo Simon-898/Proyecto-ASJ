@@ -7,6 +7,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import cl.papa.ordenes.pdf.OcPdfParser;
+import cl.papa.ordenes.pdf.OcParseResult;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.MediaType;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -137,5 +141,25 @@ public class OrdenController {
                 return ResponseEntity.internalServerError().body("Error abriendo PDF: " + e.getMessage());
             }
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping(path = "/parse-oc-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> parseOcPdf(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body("Archivo vacío");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.equalsIgnoreCase("application/pdf")) {
+            return ResponseEntity.badRequest().body("Solo se permite PDF");
+        }
+
+        try {
+            OcParseResult result = OcPdfParser.parse(file.getInputStream());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Error leyendo PDF: " + e.getMessage());
+        }
     }
 }
