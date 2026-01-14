@@ -39,6 +39,10 @@ public class Orden {
     @Column(length = 500)
     private String observacion;
 
+    @Column(name = "oc_pdf")
+    private String ocPdf;
+
+
     // Getters/Setters
     public Long getId() { return id; }
 
@@ -62,4 +66,11 @@ public class Orden {
 
     public String getObservacion() { return observacion; }
     public void setObservacion(String observacion) { this.observacion = observacion; }
+
+    public String getOcPdf() {
+    return ocPdf;}
+
+    public void setOcPdf(String ocPdf) {
+    this.ocPdf = ocPdf;}
+
 }

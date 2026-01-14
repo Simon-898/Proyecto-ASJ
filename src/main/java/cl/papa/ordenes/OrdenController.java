@@ -1,8 +1,17 @@
 package cl.papa.ordenes;
 
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 @RestController
@@ -33,10 +42,7 @@ public class OrdenController {
 
     // Editar datos generales
     @PutMapping("/{id}")
-    public ResponseEntity<Orden> editar(
-            @PathVariable Long id,
-            @RequestBody Orden body) {
-
+    public ResponseEntity<Orden> editar(@PathVariable Long id, @RequestBody Orden body) {
         return repository.findById(id)
                 .map(o -> {
                     o.setNumeroOrden(body.getNumeroOrden());
@@ -45,6 +51,7 @@ public class OrdenController {
                     o.setMontoClp(body.getMontoClp());
                     o.setObservacion(body.getObservacion());
                     o.setHes(body.getHes());
+                    // Nota: no tocamos ocPdf acá para no pisarlo sin querer
                     return ResponseEntity.ok(repository.save(o));
                 })
                 .orElse(ResponseEntity.notFound().build());
@@ -52,10 +59,7 @@ public class OrdenController {
 
     // Cambiar estado (avance del flujo)
     @PatchMapping("/{id}/estado")
-    public ResponseEntity<Orden> cambiarEstado(
-            @PathVariable Long id,
-            @RequestParam EstadoOrden estado) {
-
+    public ResponseEntity<Orden> cambiarEstado(@PathVariable Long id, @RequestParam EstadoOrden estado) {
         return repository.findById(id)
                 .map(o -> {
                     o.setEstado(estado);
@@ -72,5 +76,66 @@ public class OrdenController {
         }
         repository.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // Subir PDF de la Orden de Compra
+    @PostMapping(path = "/{id}/oc-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> subirOcPdf(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body("Archivo vacío");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.equalsIgnoreCase("application/pdf")) {
+            return ResponseEntity.badRequest().body("Solo se permite PDF");
+        }
+
+        return repository.findById(id).map(orden -> {
+            try {
+                Path dir = Paths.get("data", "ocs");
+                Files.createDirectories(dir);
+
+                // Nombre seguro: OC-<numeroOrden>.pdf (siempre .pdf)
+                String safeNumero = orden.getNumeroOrden().replaceAll("[^a-zA-Z0-9-_]", "_");
+                String filename = "OC-" + safeNumero + ".pdf";
+
+                Path destino = dir.resolve(filename);
+                Files.write(destino, file.getBytes());
+
+                orden.setOcPdf(filename);
+                repository.save(orden);
+
+                return ResponseEntity.ok().body("PDF guardado como: " + filename);
+            } catch (IOException e) {
+                return ResponseEntity.internalServerError().body("Error guardando PDF: " + e.getMessage());
+            }
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    // Ver/Descargar PDF asociado a la OC
+    @GetMapping("/{id}/oc-pdf")
+    public ResponseEntity<?> verOcPdf(@PathVariable Long id) {
+        return repository.findById(id).map(orden -> {
+            try {
+                if (orden.getOcPdf() == null || orden.getOcPdf().isBlank()) {
+                    return ResponseEntity.status(404).body("Esta orden no tiene PDF asociado");
+                }
+
+                Path path = Paths.get("data", "ocs", orden.getOcPdf());
+                if (!Files.exists(path)) {
+                    return ResponseEntity.status(404).body("No se encontró el archivo en disco");
+                }
+
+                Resource resource = new UrlResource(path.toUri());
+
+                return ResponseEntity.ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + orden.getOcPdf() + "\"")
+                        .contentType(MediaType.APPLICATION_PDF)
+                        .body(resource);
+
+            } catch (Exception e) {
+                return ResponseEntity.internalServerError().body("Error abriendo PDF: " + e.getMessage());
+            }
+        }).orElse(ResponseEntity.notFound().build());
     }
 }
