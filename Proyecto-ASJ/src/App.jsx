@@ -89,6 +89,65 @@ function App() {
     numeroFactura: "",
   });
 
+  // ===== SELECCIÓN =====
+  const [seleccion, setSeleccion] = useState(new Set());
+
+  const toggleSeleccion = (id) => {
+    setSeleccion((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  };
+
+  const seleccionarTodas = (items) => {
+    if (items.length === 0) return;
+    if (seleccion.size === items.length) {
+      setSeleccion(new Set());
+    } else {
+      setSeleccion(new Set(items.map((o) => o.id)));
+    }
+  };
+
+  const exportarCSV = (items) => {
+    const rows = items
+      .filter((o) => seleccion.has(o.id))
+      .map((o) => ({
+        "N° Orden (OC)": o.numeroOrden,
+        OT: o.ot,
+        "Fecha doc": o.fechaLlegada,
+        "Monto Neto": o.montoClp,
+        Transpaletas: o.cantidadTranspaletas ?? "",
+        HES: o.hes ?? "",
+        Cliente: o.cliente ?? "",
+        Tienda: o.tienda ?? "",
+        Zona: o.zona ?? "",
+        "N° Factura": o.numeroFactura ?? "",
+        Estado: o.estado,
+        Observación: o.observacion ?? "",
+      }));
+
+    if (rows.length === 0) return;
+
+    // CSV amigable para Excel en Chile: separador ";" (evita que se desordene)
+    const headers = Object.keys(rows[0]).join(";");
+    const csv = [headers, ...rows.map((r) => Object.values(r).join(";"))].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ordenes_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+  };
+
+  const respaldarZIP = () => {
+    window.open(`${API}/backup`, "_blank");
+  };
+
   const cargar = () => {
     setLoading(true);
     const url = estado === "ALL" ? API : `${API}?estado=${estado}`;
@@ -183,7 +242,7 @@ function App() {
     if (!file) return;
     if (file.type !== "application/pdf") return alert("Solo se permite PDF");
 
-    // reseteo fuerte antes de cargar (evita “se quedan datos anteriores”)
+    // reseteo fuerte antes de cargar
     setPdfSeleccionado(null);
     setForm(emptyForm());
     setMostrarForm(false);
@@ -445,6 +504,16 @@ function App() {
       return sortDir === "asc" ? diff : -diff;
     });
 
+  // Si cambias de filtro/estado y no existen esas filas, limpia selección “fantasma”
+  useEffect(() => {
+    setSeleccion((prev) => {
+      const ids = new Set(ordenesFiltradas.map((o) => o.id));
+      const n = new Set();
+      for (const id of prev) if (ids.has(id)) n.add(id);
+      return n;
+    });
+  }, [estado, zonaFiltro, q, sortDir, ordenes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="page">
       <div className="header">
@@ -466,11 +535,7 @@ function App() {
           </button>
 
           {ESTADOS.map((e) => (
-            <button
-              key={e.key}
-              onClick={() => setEstado(e.key)}
-              className={`btn btnTab ${estado === e.key ? "btnPrimary" : ""}`}
-            >
+            <button key={e.key} onClick={() => setEstado(e.key)} className={`btn btnTab ${estado === e.key ? "btnPrimary" : ""}`}>
               {e.label}
             </button>
           ))}
@@ -500,6 +565,19 @@ function App() {
             {creando ? "Procesando..." : "Nueva orden (PDF)"}
           </button>
 
+          {/* ===== ACCIONES MASIVAS ===== */}
+          <div className="bulkActions">
+            <span className="muted">Seleccionadas: {seleccion.size}</span>
+
+            <button className="btn" disabled={seleccion.size === 0} onClick={() => exportarCSV(ordenesFiltradas)}>
+              Exportar seleccionadas (CSV)
+            </button>
+
+            <button className="btn" onClick={respaldarZIP}>
+              Respaldar (ZIP)
+            </button>
+          </div>
+
           <input
             ref={fileNuevaOcRef}
             type="file"
@@ -525,6 +603,13 @@ function App() {
           <table className="table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={ordenesFiltradas.length > 0 && seleccion.size === ordenesFiltradas.length}
+                    onChange={() => seleccionarTodas(ordenesFiltradas)}
+                  />
+                </th>
                 <th>N° Orden (OC)</th>
                 <th>OT</th>
                 <th>Fecha doc</th>
@@ -545,6 +630,10 @@ function App() {
             <tbody>
               {ordenesFiltradas.map((o) => (
                 <tr key={o.id}>
+                  <td>
+                    <input type="checkbox" checked={seleccion.has(o.id)} onChange={() => toggleSeleccion(o.id)} />
+                  </td>
+
                   <td>{o.numeroOrden}</td>
                   <td>{o.ot}</td>
                   <td>{o.fechaLlegada}</td>
