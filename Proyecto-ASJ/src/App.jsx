@@ -14,11 +14,15 @@ export default function App() {
         <NavLink className={({ isActive }) => `navBtn ${isActive ? "navBtnActive" : ""}`} to="/estadisticas">
           Estadísticas
         </NavLink>
+        <NavLink className={({ isActive }) => `navBtn ${isActive ? "navBtnActive" : ""}`} to="/visitas">
+          Visitas
+        </NavLink>
       </div>
 
       <Routes>
         <Route path="/" element={<OrdenesPage />} />
         <Route path="/estadisticas" element={<EstadisticasPage />} />
+        <Route path="/visitas" element={<VisitasPage />} />
       </Routes>
     </BrowserRouter>
   );

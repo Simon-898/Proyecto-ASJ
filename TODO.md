@@ -1,0 +1,2 @@
+- [x] Agregar NavLink para "Visitas" en la navegación superior (topNav) con ruta "/visitas"
+- [x] Agregar Route para "/visitas" en el componente Routes apuntando a VisitasPage
