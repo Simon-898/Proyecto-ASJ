@@ -40,9 +40,12 @@ function norm(s) {
 }
 
 function App() {
-  const [estado, setEstado] = useState("OC_RECIBIDA");
+  const [estado, setEstado] = useState("ALL");
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // ✅ Selección (para exportar después)
+  const [seleccion, setSeleccion] = useState(() => new Set());
 
   // Buscar solo por OC
   const [q, setQ] = useState("");
@@ -92,12 +95,35 @@ function App() {
 
   const cargar = () => {
     setLoading(true);
-    fetch(`${API}?estado=${estado}`)
+    const url = estado === "ALL" ? API : `${API}?estado=${estado}`;
+
+    fetch(url)
       .then((res) => res.json())
       .then((data) => setOrdenes(Array.isArray(data) ? data : []))
       .catch((err) => console.error("Error cargando órdenes", err))
       .finally(() => setLoading(false));
   };
+  const respaldar = async () => {
+    try {
+      const res = await fetch(`${API}/backup`);
+      if (!res.ok) return alert("Error creando respaldo: " + (await res.text()));
+
+      const blob = await res.blob();
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "backup_ordenes.zip"; // el backend igual manda un nombre con timestamp
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Error descargando respaldo");
+    }
+  };
+
 
   useEffect(() => {
     cargar();
@@ -383,7 +409,8 @@ function App() {
     }
   };
 
-  const mostrarColFactura = estado === "FACTURADA" || estado === "PAGADA";
+  // Mostrar columna factura:
+  const mostrarColFactura = estado === "FACTURADA" || estado === "PAGADA" || estado === "ALL";
 
   const qn = norm(q);
   const ordenesFiltradas = ordenes
@@ -397,6 +424,90 @@ function App() {
       const diff = ams - bms;
       return sortDir === "asc" ? diff : -diff;
     });
+
+  // ✅ Helpers selección (sobre lo filtrado/visible)
+  const idsFiltrados = ordenesFiltradas.map((o) => o.id);
+
+  const isSelected = (id) => seleccion.has(id);
+
+  const toggleOne = (id) => {
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allFilteredSelected =
+    idsFiltrados.length > 0 && idsFiltrados.every((id) => seleccion.has(id));
+
+  const toggleAllFiltered = () => {
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        idsFiltrados.forEach((id) => next.delete(id));
+      } else {
+        idsFiltrados.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+  const exportarSeleccionadasCSV = () => {
+    if (!seleccion || seleccion.size === 0) {
+      alert("No hay órdenes seleccionadas.");
+      return;
+    }
+
+    const rows = ordenes
+      .filter((o) => seleccion.has(o.id))
+      .map((o) => ({
+        "N° Orden (OC)": o.numeroOrden ?? "",
+        OT: o.ot ?? "",
+        "Fecha doc": o.fechaLlegada ?? "",
+        "Monto Neto (CLP)": o.montoClp ?? "",
+        Transpaletas: o.cantidadTranspaletas ?? "",
+        HES: o.hes ?? "",
+        "N° Factura": o.numeroFactura ?? "",
+        Estado: o.estado ?? "",
+        Observacion: (o.observacion ?? "").toString().replaceAll("\n", " ").trim(),
+      }));
+
+    // CSV con separador ; (mejor para Excel en español)
+    const headers = Object.keys(rows[0]);
+    const esc = (v) => {
+      const s = (v ?? "").toString();
+      // si contiene ; o " o saltos, se encierra en comillas y se duplican comillas
+      if (/[;"\n\r]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+      return s;
+    };
+
+    const csv = [
+      headers.join(";"),
+      ...rows.map((r) => headers.map((h) => esc(r[h])).join(";")),
+    ].join("\r\n");
+
+    const BOM = "\uFEFF";
+    const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" });
+
+    const url = URL.createObjectURL(blob);
+
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const fileName = `ordenes_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+      now.getDate()
+    )}_${pad(now.getHours())}${pad(now.getMinutes())}.csv`;
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+  };
+
 
   return (
     <div className="page">
@@ -412,6 +523,13 @@ function App() {
 
       <div className="toolbar">
         <div className="tabs">
+          <button
+            onClick={() => setEstado("ALL")}
+            className={`btn ${estado === "ALL" ? "btnTabActive btnPrimary" : ""}`}
+          >
+            Todas
+          </button>
+
           {ESTADOS.map((e) => (
             <button
               key={e.key}
@@ -430,6 +548,14 @@ function App() {
             onChange={(e) => setQ(e.target.value)}
             placeholder="Buscar por N° Orden de Compra"
           />
+          <button className="btn" onClick={exportarSeleccionadasCSV}>
+            Exportar seleccionadas (CSV)
+          </button>
+          <button className="btn" onClick={respaldar}>
+            Respaldar (ZIP)
+          </button>
+
+
 
           <button className="btn" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>
             Fecha: {sortDir === "asc" ? "↑" : "↓"}
@@ -439,7 +565,7 @@ function App() {
             Nueva orden (Manual)
           </button>
 
-          <button className="btn btnPrimary" onClick={() => fileNuevaOcRef.current?.click()} disabled={creando}>
+          <button className="btn btnPrimary" onClick={abrirSelectorNuevaOc} disabled={creando}>
             {creando ? "Procesando..." : "Nueva orden (PDF)"}
           </button>
 
@@ -454,6 +580,11 @@ function App() {
               parsearPdfNuevaOrden(file);
             }}
           />
+
+          {/* ✅ contador */}
+          <div style={{ color: "rgba(255,255,255,0.75)", fontWeight: 700 }}>
+            Seleccionadas: {seleccion.size}
+          </div>
         </div>
       </div>
 
@@ -468,6 +599,11 @@ function App() {
           <table className="table">
             <thead>
               <tr>
+                {/* ✅ checkbox header */}
+                <th>
+                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} />
+                </th>
+
                 <th>N° Orden (OC)</th>
                 <th>OT</th>
                 <th>Fecha doc</th>
@@ -485,6 +621,11 @@ function App() {
             <tbody>
               {ordenesFiltradas.map((o) => (
                 <tr key={o.id}>
+                  {/* ✅ checkbox fila */}
+                  <td>
+                    <input type="checkbox" checked={isSelected(o.id)} onChange={() => toggleOne(o.id)} />
+                  </td>
+
                   <td>{o.numeroOrden}</td>
                   <td>{o.ot}</td>
                   <td>{o.fechaLlegada}</td>
@@ -537,14 +678,20 @@ function App() {
           <div className="modal">
             <div className="modalHeader">
               <h2>Nueva orden desde PDF</h2>
-              <button className="btn btnGhost" onClick={cerrarForm}>✕</button>
+              <button className="btn btnGhost" onClick={cerrarForm}>
+                ✕
+              </button>
             </div>
 
             <div className="modalBody">
               <div className="grid">
                 <div>
                   <label className="label">N° Orden (OC)</label>
-                  <input className="input" value={form.numeroOrden} onChange={(e) => setForm((p) => ({ ...p, numeroOrden: e.target.value }))} />
+                  <input
+                    className="input"
+                    value={form.numeroOrden}
+                    onChange={(e) => setForm((p) => ({ ...p, numeroOrden: e.target.value }))}
+                  />
                 </div>
 
                 <div>
@@ -554,22 +701,42 @@ function App() {
 
                 <div>
                   <label className="label">Fecha del documento</label>
-                  <input className="input" type="date" value={form.fechaLlegada} onChange={(e) => setForm((p) => ({ ...p, fechaLlegada: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="date"
+                    value={form.fechaLlegada}
+                    onChange={(e) => setForm((p) => ({ ...p, fechaLlegada: e.target.value }))}
+                  />
                 </div>
 
                 <div>
                   <label className="label">Monto NETO (CLP)</label>
-                  <input className="input" type="number" value={form.montoClp} onChange={(e) => setForm((p) => ({ ...p, montoClp: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="number"
+                    value={form.montoClp}
+                    onChange={(e) => setForm((p) => ({ ...p, montoClp: e.target.value }))}
+                  />
                 </div>
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input className="input" type="number" value={form.cantidadTranspaletas} onChange={(e) => setForm((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="number"
+                    value={form.cantidadTranspaletas}
+                    onChange={(e) => setForm((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
+                  />
                 </div>
 
                 <div className="gridFull">
                   <label className="label">Observación</label>
-                  <textarea className="textarea" rows={3} value={form.observacion} onChange={(e) => setForm((p) => ({ ...p, observacion: e.target.value }))} />
+                  <textarea
+                    className="textarea"
+                    rows={3}
+                    value={form.observacion}
+                    onChange={(e) => setForm((p) => ({ ...p, observacion: e.target.value }))}
+                  />
                 </div>
 
                 <div className="gridFull" style={{ color: "rgba(255,255,255,0.75)" }}>
@@ -579,7 +746,9 @@ function App() {
             </div>
 
             <div className="modalFooter">
-              <button className="btn" onClick={cerrarForm} disabled={creando}>Cancelar</button>
+              <button className="btn" onClick={cerrarForm} disabled={creando}>
+                Cancelar
+              </button>
               <button className="btn btnPrimary" onClick={guardarNuevaOrden} disabled={creando}>
                 {creando ? "Guardando..." : "Guardar"}
               </button>
@@ -594,14 +763,20 @@ function App() {
           <div className="modal">
             <div className="modalHeader">
               <h2>Nueva orden (Manual)</h2>
-              <button className="btn btnGhost" onClick={() => setManualOpen(false)}>✕</button>
+              <button className="btn btnGhost" onClick={() => setManualOpen(false)}>
+                ✕
+              </button>
             </div>
 
             <div className="modalBody">
               <div className="grid">
                 <div>
                   <label className="label">N° Orden (OC)</label>
-                  <input className="input" value={manual.numeroOrden} onChange={(e) => setManual((p) => ({ ...p, numeroOrden: e.target.value }))} />
+                  <input
+                    className="input"
+                    value={manual.numeroOrden}
+                    onChange={(e) => setManual((p) => ({ ...p, numeroOrden: e.target.value }))}
+                  />
                 </div>
 
                 <div>
@@ -611,28 +786,50 @@ function App() {
 
                 <div>
                   <label className="label">Fecha doc</label>
-                  <input className="input" type="date" value={manual.fechaLlegada} onChange={(e) => setManual((p) => ({ ...p, fechaLlegada: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="date"
+                    value={manual.fechaLlegada}
+                    onChange={(e) => setManual((p) => ({ ...p, fechaLlegada: e.target.value }))}
+                  />
                 </div>
 
                 <div>
                   <label className="label">Monto NETO (CLP)</label>
-                  <input className="input" type="number" value={manual.montoClp} onChange={(e) => setManual((p) => ({ ...p, montoClp: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="number"
+                    value={manual.montoClp}
+                    onChange={(e) => setManual((p) => ({ ...p, montoClp: e.target.value }))}
+                  />
                 </div>
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input className="input" type="number" value={manual.cantidadTranspaletas} onChange={(e) => setManual((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="number"
+                    value={manual.cantidadTranspaletas}
+                    onChange={(e) => setManual((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
+                  />
                 </div>
 
                 <div className="gridFull">
                   <label className="label">Observación</label>
-                  <textarea className="textarea" rows={3} value={manual.observacion} onChange={(e) => setManual((p) => ({ ...p, observacion: e.target.value }))} />
+                  <textarea
+                    className="textarea"
+                    rows={3}
+                    value={manual.observacion}
+                    onChange={(e) => setManual((p) => ({ ...p, observacion: e.target.value }))}
+                  />
                 </div>
               </div>
             </div>
 
             <div className="modalFooter">
-              <button className="btn" onClick={() => setManualOpen(false)} disabled={manualSaving}>Cancelar</button>
+              <button className="btn" onClick={() => setManualOpen(false)} disabled={manualSaving}>
+                Cancelar
+              </button>
               <button className="btn btnPrimary" onClick={guardarManual} disabled={manualSaving}>
                 {manualSaving ? "Guardando..." : "Guardar"}
               </button>
@@ -647,14 +844,20 @@ function App() {
           <div className="modal">
             <div className="modalHeader">
               <h2>Editar orden</h2>
-              <button className="btn btnGhost" onClick={() => setEditOpen(false)}>✕</button>
+              <button className="btn btnGhost" onClick={() => setEditOpen(false)}>
+                ✕
+              </button>
             </div>
 
             <div className="modalBody">
               <div className="grid">
                 <div>
                   <label className="label">N° Orden (OC)</label>
-                  <input className="input" value={edit.numeroOrden} onChange={(e) => setEdit((p) => ({ ...p, numeroOrden: e.target.value }))} />
+                  <input
+                    className="input"
+                    value={edit.numeroOrden}
+                    onChange={(e) => setEdit((p) => ({ ...p, numeroOrden: e.target.value }))}
+                  />
                 </div>
 
                 <div>
@@ -664,17 +867,32 @@ function App() {
 
                 <div>
                   <label className="label">Fecha doc</label>
-                  <input className="input" type="date" value={edit.fechaLlegada} onChange={(e) => setEdit((p) => ({ ...p, fechaLlegada: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="date"
+                    value={edit.fechaLlegada}
+                    onChange={(e) => setEdit((p) => ({ ...p, fechaLlegada: e.target.value }))}
+                  />
                 </div>
 
                 <div>
                   <label className="label">Monto NETO (CLP)</label>
-                  <input className="input" type="number" value={edit.montoClp} onChange={(e) => setEdit((p) => ({ ...p, montoClp: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="number"
+                    value={edit.montoClp}
+                    onChange={(e) => setEdit((p) => ({ ...p, montoClp: e.target.value }))}
+                  />
                 </div>
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input className="input" type="number" value={edit.cantidadTranspaletas} onChange={(e) => setEdit((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
+                  <input
+                    className="input"
+                    type="number"
+                    value={edit.cantidadTranspaletas}
+                    onChange={(e) => setEdit((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
+                  />
                 </div>
 
                 <div>
@@ -684,18 +902,29 @@ function App() {
 
                 <div>
                   <label className="label">N° Factura</label>
-                  <input className="input" value={edit.numeroFactura} onChange={(e) => setEdit((p) => ({ ...p, numeroFactura: e.target.value }))} />
+                  <input
+                    className="input"
+                    value={edit.numeroFactura}
+                    onChange={(e) => setEdit((p) => ({ ...p, numeroFactura: e.target.value }))}
+                  />
                 </div>
 
                 <div className="gridFull">
                   <label className="label">Observación</label>
-                  <textarea className="textarea" rows={3} value={edit.observacion} onChange={(e) => setEdit((p) => ({ ...p, observacion: e.target.value }))} />
+                  <textarea
+                    className="textarea"
+                    rows={3}
+                    value={edit.observacion}
+                    onChange={(e) => setEdit((p) => ({ ...p, observacion: e.target.value }))}
+                  />
                 </div>
               </div>
             </div>
 
             <div className="modalFooter">
-              <button className="btn" onClick={() => setEditOpen(false)} disabled={editSaving}>Cancelar</button>
+              <button className="btn" onClick={() => setEditOpen(false)} disabled={editSaving}>
+                Cancelar
+              </button>
               <button className="btn btnPrimary" onClick={guardarEditar} disabled={editSaving}>
                 {editSaving ? "Guardando..." : "Guardar cambios"}
               </button>
