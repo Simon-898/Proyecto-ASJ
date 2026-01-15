@@ -55,6 +55,8 @@ public class OrdenController {
                     o.setMontoClp(body.getMontoClp());
                     o.setObservacion(body.getObservacion());
                     o.setHes(body.getHes());
+                    o.setNumeroFactura(body.getNumeroFactura());
+
                     // Nota: no tocamos ocPdf acá para no pisarlo sin querer
                     return ResponseEntity.ok(repository.save(o));
                 })

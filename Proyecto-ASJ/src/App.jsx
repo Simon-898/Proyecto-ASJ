@@ -23,8 +23,7 @@ function App() {
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const [subiendoId, setSubiendoId] = useState(null);
-
+  // Flujo "Nueva orden desde PDF"
   const fileNuevaOcRef = useRef(null);
   const [creando, setCreando] = useState(false);
   const [mostrarForm, setMostrarForm] = useState(false);
@@ -35,7 +34,7 @@ function App() {
     ot: "",
     fechaLlegada: "",
     montoClp: "",
-    cantidadTranspaletas: "", // ✅ NUEVO
+    cantidadTranspaletas: "",
     observacion: "",
   });
 
@@ -53,10 +52,14 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estado]);
 
+  // ✅ Avanzar con reglas:
+  // - EJECUTADA -> HES_RECIBIDO: pide HES
+  // - HES_RECIBIDO -> FACTURADA: pide N° Factura
   const avanzarEstado = async (orden) => {
     const next = SIGUIENTE[orden.estado];
     if (!next) return;
 
+    // 1) EJECUTADA -> HES_RECIBIDO (pide HES)
     if (next === "HES_RECIBIDO") {
       const hes = prompt("Ingresa el HES recibido por correo:");
       if (!hes || !hes.trim()) return;
@@ -74,7 +77,8 @@ function App() {
           estado: next,
           hes: hes.trim(),
           observacion: orden.observacion ?? null,
-          cantidadTranspaletas: orden.cantidadTranspaletas ?? null, // ✅
+          cantidadTranspaletas: orden.cantidadTranspaletas ?? null,
+          numeroFactura: orden.numeroFactura ?? null,
         }),
       });
 
@@ -82,43 +86,36 @@ function App() {
       return;
     }
 
-    await fetch(`${API}/${orden.id}/estado?estado=${next}`, { method: "PATCH" });
-    cargar();
-  };
+    // 2) HES_RECIBIDO -> FACTURADA (pide N° Factura)
+    if (next === "FACTURADA") {
+      const nf = prompt("Ingresa el N° de Factura:");
+      if (!nf || !nf.trim()) return;
 
-  const adjuntarPdf = async (orden, file) => {
-    if (!file) return;
+      await fetch(`${API}/${orden.id}/estado?estado=${next}`, { method: "PATCH" });
 
-    if (file.type !== "application/pdf") {
-      alert("Solo se permite PDF");
+      await fetch(`${API}/${orden.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          numeroOrden: orden.numeroOrden,
+          ot: orden.ot,
+          fechaLlegada: orden.fechaLlegada,
+          montoClp: orden.montoClp,
+          estado: next,
+          hes: orden.hes ?? null,
+          observacion: orden.observacion ?? null,
+          cantidadTranspaletas: orden.cantidadTranspaletas ?? null,
+          numeroFactura: nf.trim(), // ✅ guardamos aquí
+        }),
+      });
+
+      cargar();
       return;
     }
 
-    try {
-      setSubiendoId(orden.id);
-
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch(`${API}/${orden.id}/oc-pdf`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        alert("Error subiendo PDF: " + txt);
-        return;
-      }
-
-      cargar();
-      alert("PDF adjuntado ✅");
-    } catch (e) {
-      console.error(e);
-      alert("Error subiendo PDF");
-    } finally {
-      setSubiendoId(null);
-    }
+    // 3) Otros avances: solo PATCH
+    await fetch(`${API}/${orden.id}/estado?estado=${next}`, { method: "PATCH" });
+    cargar();
   };
 
   // ========= NUEVA ORDEN DESDE PDF =========
@@ -160,7 +157,7 @@ function App() {
         ot: data.ot ?? "",
         fechaLlegada: data.fechaDocumento ?? "",
         montoClp: data.montoNetoClp ?? "",
-        cantidadTranspaletas: data.cantidadTranspaletas ?? "", // ✅ NUEVO
+        cantidadTranspaletas: data.cantidadTranspaletas ?? "",
         observacion: data.observacion ?? "",
       });
 
@@ -183,6 +180,7 @@ function App() {
     try {
       setCreando(true);
 
+      // 1) Crear orden
       const resCrear = await fetch(`${API}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -193,7 +191,7 @@ function App() {
           montoClp: Number(form.montoClp),
           observacion: form.observacion?.trim() || null,
           cantidadTranspaletas:
-            form.cantidadTranspaletas === "" ? null : Number(form.cantidadTranspaletas), // ✅ NUEVO
+            form.cantidadTranspaletas === "" ? null : Number(form.cantidadTranspaletas),
         }),
       });
 
@@ -205,6 +203,7 @@ function App() {
 
       const ordenCreada = await resCrear.json();
 
+      // 2) Subir PDF a esa orden
       const fd = new FormData();
       fd.append("file", pdfSeleccionado);
 
@@ -310,8 +309,13 @@ function App() {
               <th align="left">Monto Neto (CLP)</th>
               <th align="left">Transpaletas</th>
               <th align="left">HES</th>
+
+              {/* ✅ solo mostrar Factura en pestañas Facturada / Pagada */}
+              {(estado === "FACTURADA" || estado === "PAGADA") && (
+                <th align="left">N° Factura</th>
+              )}
+
               <th align="left">OC</th>
-              <th align="left">Adjuntar PDF</th>
               <th align="left">Acción</th>
             </tr>
           </thead>
@@ -325,6 +329,10 @@ function App() {
                 <td>${o.montoClp}</td>
                 <td>{o.cantidadTranspaletas ?? "-"}</td>
                 <td>{o.hes ?? "-"}</td>
+
+                {(estado === "FACTURADA" || estado === "PAGADA") && (
+                  <td>{o.numeroFactura ?? "-"}</td>
+                )}
 
                 <td>
                   {o.ocPdf ? (
@@ -344,42 +352,6 @@ function App() {
                     </a>
                   ) : (
                     "-"
-                  )}
-                </td>
-
-                <td>
-                  <label
-                    style={{
-                      display: "inline-block",
-                      padding: "8px 10px",
-                      borderRadius: 8,
-                      border: "1px solid #555",
-                      cursor: subiendoId === o.id ? "not-allowed" : "pointer",
-                      opacity: subiendoId === o.id ? 0.6 : 1,
-                      userSelect: "none",
-                      marginRight: 8,
-                    }}
-                  >
-                    {o.ocPdf ? "Cambiar PDF" : "Adjuntar PDF"}
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      disabled={subiendoId === o.id}
-                      style={{ display: "none" }}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        adjuntarPdf(o, file);
-                      }}
-                    />
-                  </label>
-
-                  {subiendoId === o.id ? (
-                    <span>Subiendo...</span>
-                  ) : o.ocPdf ? (
-                    <span>PDF listo ✅</span>
-                  ) : (
-                    <span style={{ opacity: 0.7 }}>Sin PDF</span>
                   )}
                 </td>
 
@@ -471,7 +443,6 @@ function App() {
                 />
               </div>
 
-              {/* ✅ NUEVO */}
               <div>
                 <label style={{ display: "block", marginBottom: 6 }}>Cantidad transpaletas</label>
                 <input

@@ -28,6 +28,8 @@ public class Orden {
     // HES (cuando llegue)
     private String hes;
 
+    private String numeroFactura;
+
     // Observación (texto)
     @Column(length = 1000)
     private String observacion;
@@ -38,35 +40,95 @@ public class Orden {
     // ✅ NUEVO: cantidad transpaletas (ej: 12)
     private Integer cantidadTranspaletas;
 
-    public Orden() {}
+    public Orden() {
+    }
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+    public Long getId() {
+        return id;
+    }
 
-    public String getNumeroOrden() { return numeroOrden; }
-    public void setNumeroOrden(String numeroOrden) { this.numeroOrden = numeroOrden; }
+    public void setId(Long id) {
+        this.id = id;
+    }
 
-    public String getOt() { return ot; }
-    public void setOt(String ot) { this.ot = ot; }
+    public String getNumeroOrden() {
+        return numeroOrden;
+    }
 
-    public LocalDate getFechaLlegada() { return fechaLlegada; }
-    public void setFechaLlegada(LocalDate fechaLlegada) { this.fechaLlegada = fechaLlegada; }
+    public void setNumeroOrden(String numeroOrden) {
+        this.numeroOrden = numeroOrden;
+    }
 
-    public Long getMontoClp() { return montoClp; }
-    public void setMontoClp(Long montoClp) { this.montoClp = montoClp; }
+    public String getOt() {
+        return ot;
+    }
 
-    public EstadoOrden getEstado() { return estado; }
-    public void setEstado(EstadoOrden estado) { this.estado = estado; }
+    public void setOt(String ot) {
+        this.ot = ot;
+    }
 
-    public String getHes() { return hes; }
-    public void setHes(String hes) { this.hes = hes; }
+    public LocalDate getFechaLlegada() {
+        return fechaLlegada;
+    }
 
-    public String getObservacion() { return observacion; }
-    public void setObservacion(String observacion) { this.observacion = observacion; }
+    public void setFechaLlegada(LocalDate fechaLlegada) {
+        this.fechaLlegada = fechaLlegada;
+    }
 
-    public String getOcPdf() { return ocPdf; }
-    public void setOcPdf(String ocPdf) { this.ocPdf = ocPdf; }
+    public Long getMontoClp() {
+        return montoClp;
+    }
 
-    public Integer getCantidadTranspaletas() { return cantidadTranspaletas; }
-    public void setCantidadTranspaletas(Integer cantidadTranspaletas) { this.cantidadTranspaletas = cantidadTranspaletas; }
+    public void setMontoClp(Long montoClp) {
+        this.montoClp = montoClp;
+    }
+
+    public EstadoOrden getEstado() {
+        return estado;
+    }
+
+    public void setEstado(EstadoOrden estado) {
+        this.estado = estado;
+    }
+
+    public String getHes() {
+        return hes;
+    }
+
+    public void setHes(String hes) {
+        this.hes = hes;
+    }
+
+    public String getObservacion() {
+        return observacion;
+    }
+
+    public void setObservacion(String observacion) {
+        this.observacion = observacion;
+    }
+
+    public String getOcPdf() {
+        return ocPdf;
+    }
+
+    public void setOcPdf(String ocPdf) {
+        this.ocPdf = ocPdf;
+    }
+
+    public Integer getCantidadTranspaletas() {
+        return cantidadTranspaletas;
+    }
+
+    public void setCantidadTranspaletas(Integer cantidadTranspaletas) {
+        this.cantidadTranspaletas = cantidadTranspaletas;
+    }
+
+    public String getNumeroFactura() {
+        return numeroFactura;
+    }
+
+    public void setNumeroFactura(String numeroFactura) {
+        this.numeroFactura = numeroFactura;
+    }
+
 }
