@@ -1,5 +1,7 @@
 package cl.papa.ordenes;
 
+import cl.papa.ordenes.pdf.OcParseResult;
+import cl.papa.ordenes.pdf.OcPdfParser;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -7,10 +9,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import cl.papa.ordenes.pdf.OcPdfParser;
-import cl.papa.ordenes.pdf.OcParseResult;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.http.MediaType;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -56,6 +54,15 @@ public class OrdenController {
                     o.setObservacion(body.getObservacion());
                     o.setHes(body.getHes());
                     o.setNumeroFactura(body.getNumeroFactura());
+
+                    // ✅ ESTO TE FALTABA (por eso no guardaba transpaletas)
+                    o.setCantidadTranspaletas(body.getCantidadTranspaletas());
+
+                    // (opcional) si tu front manda estado en PUT, lo permitimos
+                    // si NO quieres permitirlo, comenta la línea siguiente
+                    if (body.getEstado() != null) {
+                        o.setEstado(body.getEstado());
+                    }
 
                     // Nota: no tocamos ocPdf acá para no pisarlo sin querer
                     return ResponseEntity.ok(repository.save(o));
@@ -145,6 +152,7 @@ public class OrdenController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    // Parsear PDF (para autocompletar formulario)
     @PostMapping(path = "/parse-oc-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> parseOcPdf(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
@@ -160,8 +168,7 @@ public class OrdenController {
             OcParseResult result = OcPdfParser.parse(file.getInputStream());
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Error leyendo PDF: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Error leyendo PDF: " + e.getMessage());
         }
     }
 }
