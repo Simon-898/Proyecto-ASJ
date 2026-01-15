@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import logo from "./assets/asj.png";
+import "./App.css";
 
 const API = "http://localhost:8081/api/ordenes";
 
@@ -10,6 +11,9 @@ const ESTADOS = [
   { key: "FACTURADA", label: "Facturadas" },
   { key: "PAGADA", label: "Pagadas" },
 ];
+
+const CLIENTES = ["Tottus", "Sodimac", "TCL", "Simi", "Papa Johns", "Otros"];
+const ZONAS = ["Norte", "Centro", "Sur"];
 
 const SIGUIENTE = {
   OC_RECIBIDA: "EJECUTADA",
@@ -39,56 +43,48 @@ function norm(s) {
   return (s ?? "").toString().toLowerCase().trim();
 }
 
+const emptyForm = () => ({
+  numeroOrden: "",
+  ot: "",
+  fechaLlegada: "",
+  montoClp: "",
+  cantidadTranspaletas: "",
+  cliente: "",
+  tienda: "",
+  zona: "Centro",
+  observacion: "",
+});
+
 function App() {
   const [estado, setEstado] = useState("ALL");
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ✅ Selección (para exportar después)
-  const [seleccion, setSeleccion] = useState(() => new Set());
-
   // Buscar solo por OC
   const [q, setQ] = useState("");
   const [sortDir, setSortDir] = useState("asc");
 
-  // Nueva orden desde PDF
+  // Filtro por zona
+  const [zonaFiltro, setZonaFiltro] = useState("ALL");
+
+  // ===== NUEVA ORDEN PDF =====
   const fileNuevaOcRef = useRef(null);
   const [creando, setCreando] = useState(false);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [pdfSeleccionado, setPdfSeleccionado] = useState(null);
+  const [form, setForm] = useState(emptyForm());
 
-  const [form, setForm] = useState({
-    numeroOrden: "",
-    ot: "",
-    fechaLlegada: "",
-    montoClp: "",
-    cantidadTranspaletas: "",
-    observacion: "",
-  });
-
-  // Crear manual
+  // ===== NUEVA ORDEN MANUAL =====
   const [manualOpen, setManualOpen] = useState(false);
   const [manualSaving, setManualSaving] = useState(false);
-  const [manual, setManual] = useState({
-    numeroOrden: "",
-    ot: "",
-    fechaLlegada: "",
-    montoClp: "",
-    cantidadTranspaletas: "",
-    observacion: "",
-  });
+  const [manual, setManual] = useState(emptyForm());
 
-  // Editar
+  // ===== EDITAR =====
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editOrden, setEditOrden] = useState(null);
   const [edit, setEdit] = useState({
-    numeroOrden: "",
-    ot: "",
-    fechaLlegada: "",
-    montoClp: "",
-    cantidadTranspaletas: "",
-    observacion: "",
+    ...emptyForm(),
     hes: "",
     numeroFactura: "",
   });
@@ -103,27 +99,6 @@ function App() {
       .catch((err) => console.error("Error cargando órdenes", err))
       .finally(() => setLoading(false));
   };
-  const respaldar = async () => {
-    try {
-      const res = await fetch(`${API}/backup`);
-      if (!res.ok) return alert("Error creando respaldo: " + (await res.text()));
-
-      const blob = await res.blob();
-
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "backup_ordenes.zip"; // el backend igual manda un nombre con timestamp
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error(e);
-      alert("Error descargando respaldo");
-    }
-  };
-
 
   useEffect(() => {
     cargar();
@@ -153,6 +128,9 @@ function App() {
           observacion: orden.observacion ?? null,
           cantidadTranspaletas: orden.cantidadTranspaletas ?? null,
           numeroFactura: orden.numeroFactura ?? null,
+          cliente: orden.cliente ?? null,
+          tienda: orden.tienda ?? null,
+          zona: orden.zona ?? null,
         }),
       });
 
@@ -179,6 +157,9 @@ function App() {
           observacion: orden.observacion ?? null,
           cantidadTranspaletas: orden.cantidadTranspaletas ?? null,
           numeroFactura: nf.trim(),
+          cliente: orden.cliente ?? null,
+          tienda: orden.tienda ?? null,
+          zona: orden.zona ?? null,
         }),
       });
 
@@ -191,11 +172,21 @@ function App() {
   };
 
   // ===== NUEVA ORDEN PDF =====
-  const abrirSelectorNuevaOc = () => fileNuevaOcRef.current?.click();
+  const abrirSelectorNuevaOc = () => {
+    setPdfSeleccionado(null);
+    setForm(emptyForm());
+    setMostrarForm(false);
+    fileNuevaOcRef.current?.click();
+  };
 
   const parsearPdfNuevaOrden = async (file) => {
     if (!file) return;
     if (file.type !== "application/pdf") return alert("Solo se permite PDF");
+
+    // reseteo fuerte antes de cargar (evita “se quedan datos anteriores”)
+    setPdfSeleccionado(null);
+    setForm(emptyForm());
+    setMostrarForm(false);
 
     try {
       setCreando(true);
@@ -208,14 +199,18 @@ function App() {
       const data = await res.json();
 
       setPdfSeleccionado(file);
-      setForm({
+      setForm((prev) => ({
+        ...prev,
         numeroOrden: data.numeroOrden ?? "",
         ot: data.ot ?? "",
         fechaLlegada: data.fechaDocumento ?? "",
         montoClp: data.montoNetoClp ?? "",
         cantidadTranspaletas: data.cantidadTranspaletas ?? "",
         observacion: data.observacion ?? "",
-      });
+        cliente: "",
+        tienda: "",
+        zona: "Centro",
+      }));
 
       setMostrarForm(true);
     } catch (e) {
@@ -231,6 +226,9 @@ function App() {
     if (!form.ot?.trim()) return alert("Falta OT");
     if (!form.fechaLlegada?.trim()) return alert("Falta fecha del documento");
     if (!form.montoClp?.toString().trim()) return alert("Falta monto neto (CLP)");
+    if (!form.cliente?.trim()) return alert("Falta Cliente");
+    if (!form.tienda?.trim()) return alert("Falta Tienda");
+    if (!form.zona?.trim()) return alert("Falta Zona");
     if (!pdfSeleccionado) return alert("Falta el PDF");
 
     try {
@@ -245,8 +243,10 @@ function App() {
           fechaLlegada: form.fechaLlegada.trim(),
           montoClp: Number(form.montoClp),
           observacion: form.observacion?.trim() || null,
-          cantidadTranspaletas:
-            form.cantidadTranspaletas === "" ? null : Number(form.cantidadTranspaletas),
+          cantidadTranspaletas: form.cantidadTranspaletas === "" ? null : Number(form.cantidadTranspaletas),
+          cliente: form.cliente.trim(),
+          tienda: form.tienda.trim(),
+          zona: form.zona.trim(),
         }),
       });
 
@@ -269,6 +269,8 @@ function App() {
 
       setMostrarForm(false);
       setPdfSeleccionado(null);
+      setForm(emptyForm());
+
       setEstado("OC_RECIBIDA");
       setTimeout(() => cargar(), 150);
     } catch (e) {
@@ -282,18 +284,12 @@ function App() {
   const cerrarForm = () => {
     setMostrarForm(false);
     setPdfSeleccionado(null);
+    setForm(emptyForm());
   };
 
   // ===== NUEVA ORDEN MANUAL =====
   const abrirManual = () => {
-    setManual({
-      numeroOrden: "",
-      ot: "",
-      fechaLlegada: "",
-      montoClp: "",
-      cantidadTranspaletas: "",
-      observacion: "",
-    });
+    setManual(emptyForm());
     setManualOpen(true);
   };
 
@@ -302,6 +298,9 @@ function App() {
     if (!manual.ot?.trim()) return alert("Falta OT");
     if (!manual.fechaLlegada?.trim()) return alert("Falta fecha");
     if (!manual.montoClp?.toString().trim()) return alert("Falta monto neto (CLP)");
+    if (!manual.cliente?.trim()) return alert("Falta Cliente");
+    if (!manual.tienda?.trim()) return alert("Falta Tienda");
+    if (!manual.zona?.trim()) return alert("Falta Zona");
 
     try {
       setManualSaving(true);
@@ -315,8 +314,10 @@ function App() {
           fechaLlegada: manual.fechaLlegada.trim(),
           montoClp: Number(manual.montoClp),
           observacion: manual.observacion?.trim() || null,
-          cantidadTranspaletas:
-            manual.cantidadTranspaletas === "" ? null : Number(manual.cantidadTranspaletas),
+          cantidadTranspaletas: manual.cantidadTranspaletas === "" ? null : Number(manual.cantidadTranspaletas),
+          cliente: manual.cliente.trim(),
+          tienda: manual.tienda.trim(),
+          zona: manual.zona.trim(),
         }),
       });
 
@@ -324,6 +325,8 @@ function App() {
 
       alert("Orden creada ✅ (manual)");
       setManualOpen(false);
+      setManual(emptyForm());
+
       setEstado("OC_RECIBIDA");
       setTimeout(() => cargar(), 150);
     } catch (e) {
@@ -338,11 +341,15 @@ function App() {
   const abrirEditar = (o) => {
     setEditOrden(o);
     setEdit({
+      ...emptyForm(),
       numeroOrden: o.numeroOrden ?? "",
       ot: o.ot ?? "",
       fechaLlegada: o.fechaLlegada ?? "",
       montoClp: o.montoClp ?? "",
       cantidadTranspaletas: o.cantidadTranspaletas ?? "",
+      cliente: o.cliente ?? "",
+      tienda: o.tienda ?? "",
+      zona: o.zona ?? "Centro",
       observacion: o.observacion ?? "",
       hes: o.hes ?? "",
       numeroFactura: o.numeroFactura ?? "",
@@ -357,6 +364,9 @@ function App() {
     if (!edit.ot?.toString().trim()) return alert("Falta OT");
     if (!edit.fechaLlegada?.toString().trim()) return alert("Falta fecha");
     if (!edit.montoClp?.toString().trim()) return alert("Falta monto");
+    if (!edit.cliente?.toString().trim()) return alert("Falta Cliente");
+    if (!edit.tienda?.toString().trim()) return alert("Falta Tienda");
+    if (!edit.zona?.toString().trim()) return alert("Falta Zona");
 
     try {
       setEditSaving(true);
@@ -372,9 +382,11 @@ function App() {
           estado: editOrden.estado,
           hes: edit.hes?.toString().trim() || null,
           observacion: edit.observacion?.toString().trim() || null,
-          cantidadTranspaletas:
-            edit.cantidadTranspaletas === "" ? null : Number(edit.cantidadTranspaletas),
+          cantidadTranspaletas: edit.cantidadTranspaletas === "" ? null : Number(edit.cantidadTranspaletas),
           numeroFactura: edit.numeroFactura?.toString().trim() || null,
+          cliente: edit.cliente?.toString().trim() || null,
+          tienda: edit.tienda?.toString().trim() || null,
+          zona: edit.zona?.toString().trim() || null,
         }),
       });
 
@@ -400,7 +412,6 @@ function App() {
     try {
       const res = await fetch(`${API}/${o.id}`, { method: "DELETE" });
       if (!res.ok) return alert("Error eliminando: " + (await res.text()));
-
       alert("Orden eliminada 🗑️");
       cargar();
     } catch (e) {
@@ -409,14 +420,23 @@ function App() {
     }
   };
 
-  // Mostrar columna factura:
   const mostrarColFactura = estado === "FACTURADA" || estado === "PAGADA" || estado === "ALL";
 
+  const zonasDisponibles = useMemo(() => {
+    const s = new Set();
+    for (const o of ordenes) {
+      if (o?.zona) s.add(o.zona);
+    }
+    return Array.from(s);
+  }, [ordenes]);
+
   const qn = norm(q);
+
   const ordenesFiltradas = ordenes
     .filter((o) => {
-      if (!qn) return true;
-      return norm(o.numeroOrden).includes(qn);
+      if (qn && !norm(o.numeroOrden).includes(qn)) return false;
+      if (zonaFiltro !== "ALL" && norm(o.zona) !== norm(zonaFiltro)) return false;
+      return true;
     })
     .sort((a, b) => {
       const ams = parseISODateToMs(a.fechaLlegada);
@@ -425,97 +445,15 @@ function App() {
       return sortDir === "asc" ? diff : -diff;
     });
 
-  // ✅ Helpers selección (sobre lo filtrado/visible)
-  const idsFiltrados = ordenesFiltradas.map((o) => o.id);
-
-  const isSelected = (id) => seleccion.has(id);
-
-  const toggleOne = (id) => {
-    setSeleccion((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const allFilteredSelected =
-    idsFiltrados.length > 0 && idsFiltrados.every((id) => seleccion.has(id));
-
-  const toggleAllFiltered = () => {
-    setSeleccion((prev) => {
-      const next = new Set(prev);
-      if (allFilteredSelected) {
-        idsFiltrados.forEach((id) => next.delete(id));
-      } else {
-        idsFiltrados.forEach((id) => next.add(id));
-      }
-      return next;
-    });
-  };
-  const exportarSeleccionadasCSV = () => {
-    if (!seleccion || seleccion.size === 0) {
-      alert("No hay órdenes seleccionadas.");
-      return;
-    }
-
-    const rows = ordenes
-      .filter((o) => seleccion.has(o.id))
-      .map((o) => ({
-        "N° Orden (OC)": o.numeroOrden ?? "",
-        OT: o.ot ?? "",
-        "Fecha doc": o.fechaLlegada ?? "",
-        "Monto Neto (CLP)": o.montoClp ?? "",
-        Transpaletas: o.cantidadTranspaletas ?? "",
-        HES: o.hes ?? "",
-        "N° Factura": o.numeroFactura ?? "",
-        Estado: o.estado ?? "",
-        Observacion: (o.observacion ?? "").toString().replaceAll("\n", " ").trim(),
-      }));
-
-    // CSV con separador ; (mejor para Excel en español)
-    const headers = Object.keys(rows[0]);
-    const esc = (v) => {
-      const s = (v ?? "").toString();
-      // si contiene ; o " o saltos, se encierra en comillas y se duplican comillas
-      if (/[;"\n\r]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
-      return s;
-    };
-
-    const csv = [
-      headers.join(";"),
-      ...rows.map((r) => headers.map((h) => esc(r[h])).join(";")),
-    ].join("\r\n");
-
-    const BOM = "\uFEFF";
-    const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" });
-
-    const url = URL.createObjectURL(blob);
-
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    const fileName = `ordenes_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
-      now.getDate()
-    )}_${pad(now.getHours())}${pad(now.getMinutes())}.csv`;
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    URL.revokeObjectURL(url);
-  };
-
-
   return (
     <div className="page">
       <div className="header">
         <div className="brand">
-          <img className="brandLogo" src={logo} alt="ASJ Group" />
+          <div className="brandMark">
+            <img className="brandLogo" src={logo} alt="ASJ Group" />
+          </div>
           <div className="brandTitle">
-            <h1>ORDENES</h1>
+            <h1>ÓRDENES</h1>
             <span>Gestión local de Órdenes de Compra • ASJ Group</span>
           </div>
         </div>
@@ -523,10 +461,7 @@ function App() {
 
       <div className="toolbar">
         <div className="tabs">
-          <button
-            onClick={() => setEstado("ALL")}
-            className={`btn ${estado === "ALL" ? "btnTabActive btnPrimary" : ""}`}
-          >
+          <button onClick={() => setEstado("ALL")} className={`btn btnTab ${estado === "ALL" ? "btnPrimary" : ""}`}>
             Todas
           </button>
 
@@ -534,7 +469,7 @@ function App() {
             <button
               key={e.key}
               onClick={() => setEstado(e.key)}
-              className={`btn ${estado === e.key ? "btnTabActive btnPrimary" : ""}`}
+              className={`btn btnTab ${estado === e.key ? "btnPrimary" : ""}`}
             >
               {e.label}
             </button>
@@ -542,20 +477,16 @@ function App() {
         </div>
 
         <div className="actions">
-          <input
-            className="input"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por N° Orden de Compra"
-          />
-          <button className="btn" onClick={exportarSeleccionadasCSV}>
-            Exportar seleccionadas (CSV)
-          </button>
-          <button className="btn" onClick={respaldar}>
-            Respaldar (ZIP)
-          </button>
+          <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por N° Orden de Compra" />
 
-
+          <select className="select" value={zonaFiltro} onChange={(e) => setZonaFiltro(e.target.value)}>
+            <option value="ALL">Todas las zonas</option>
+            {[...new Set([...ZONAS, ...zonasDisponibles])].map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </select>
 
           <button className="btn" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>
             Fecha: {sortDir === "asc" ? "↑" : "↓"}
@@ -580,36 +511,29 @@ function App() {
               parsearPdfNuevaOrden(file);
             }}
           />
-
-          {/* ✅ contador */}
-          <div style={{ color: "rgba(255,255,255,0.75)", fontWeight: 700 }}>
-            Seleccionadas: {seleccion.size}
-          </div>
         </div>
       </div>
 
       <div className="sectionTitle">Estado: {estado}</div>
 
       {loading ? (
-        <p>Cargando...</p>
+        <p className="muted">Cargando...</p>
       ) : ordenesFiltradas.length === 0 ? (
-        <p>No hay órdenes para este filtro.</p>
+        <p className="muted">No hay órdenes para este filtro.</p>
       ) : (
         <div className="tableWrap">
           <table className="table">
             <thead>
               <tr>
-                {/* ✅ checkbox header */}
-                <th>
-                  <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} />
-                </th>
-
                 <th>N° Orden (OC)</th>
                 <th>OT</th>
                 <th>Fecha doc</th>
                 <th>Monto Neto</th>
                 <th>Transpaletas</th>
                 <th>HES</th>
+                <th>Cliente</th>
+                <th>Tienda</th>
+                <th>Zona</th>
                 {mostrarColFactura && <th>N° Factura</th>}
                 <th>OC</th>
                 <th>Acción</th>
@@ -621,17 +545,15 @@ function App() {
             <tbody>
               {ordenesFiltradas.map((o) => (
                 <tr key={o.id}>
-                  {/* ✅ checkbox fila */}
-                  <td>
-                    <input type="checkbox" checked={isSelected(o.id)} onChange={() => toggleOne(o.id)} />
-                  </td>
-
                   <td>{o.numeroOrden}</td>
                   <td>{o.ot}</td>
                   <td>{o.fechaLlegada}</td>
                   <td>{formatCLP(o.montoClp)}</td>
                   <td>{o.cantidadTranspaletas ?? "-"}</td>
                   <td>{o.hes ?? "-"}</td>
+                  <td>{o.cliente ?? "-"}</td>
+                  <td>{o.tienda ?? "-"}</td>
+                  <td>{o.zona ?? "-"}</td>
                   {mostrarColFactura && <td>{o.numeroFactura ?? "-"}</td>}
 
                   <td>
@@ -672,13 +594,13 @@ function App() {
         </div>
       )}
 
-      {/* MODAL PDF */}
+      {/* ================= MODAL PDF ================= */}
       {mostrarForm && (
-        <div className="modalOverlay">
-          <div className="modal">
+        <div className="modalOverlay" onMouseDown={cerrarForm}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modalHeader">
               <h2>Nueva orden desde PDF</h2>
-              <button className="btn btnGhost" onClick={cerrarForm}>
+              <button className="iconBtn" onClick={cerrarForm} aria-label="Cerrar">
                 ✕
               </button>
             </div>
@@ -687,11 +609,7 @@ function App() {
               <div className="grid">
                 <div>
                   <label className="label">N° Orden (OC)</label>
-                  <input
-                    className="input"
-                    value={form.numeroOrden}
-                    onChange={(e) => setForm((p) => ({ ...p, numeroOrden: e.target.value }))}
-                  />
+                  <input className="input" value={form.numeroOrden} onChange={(e) => setForm((p) => ({ ...p, numeroOrden: e.target.value }))} />
                 </div>
 
                 <div>
@@ -701,45 +619,53 @@ function App() {
 
                 <div>
                   <label className="label">Fecha del documento</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={form.fechaLlegada}
-                    onChange={(e) => setForm((p) => ({ ...p, fechaLlegada: e.target.value }))}
-                  />
+                  <input className="input" type="date" value={form.fechaLlegada} onChange={(e) => setForm((p) => ({ ...p, fechaLlegada: e.target.value }))} />
                 </div>
 
                 <div>
                   <label className="label">Monto NETO (CLP)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={form.montoClp}
-                    onChange={(e) => setForm((p) => ({ ...p, montoClp: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={form.montoClp} onChange={(e) => setForm((p) => ({ ...p, montoClp: e.target.value }))} />
                 </div>
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={form.cantidadTranspaletas}
-                    onChange={(e) => setForm((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={form.cantidadTranspaletas} onChange={(e) => setForm((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Cliente</label>
+                  <select className="select" value={form.cliente} onChange={(e) => setForm((p) => ({ ...p, cliente: e.target.value }))}>
+                    <option value="">(Seleccionar)</option>
+                    {CLIENTES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">Tienda</label>
+                  <input className="input" value={form.tienda} onChange={(e) => setForm((p) => ({ ...p, tienda: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Zona</label>
+                  <select className="select" value={form.zona} onChange={(e) => setForm((p) => ({ ...p, zona: e.target.value }))}>
+                    {ZONAS.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="gridFull">
                   <label className="label">Observación</label>
-                  <textarea
-                    className="textarea"
-                    rows={3}
-                    value={form.observacion}
-                    onChange={(e) => setForm((p) => ({ ...p, observacion: e.target.value }))}
-                  />
+                  <textarea className="textarea" rows={3} value={form.observacion} onChange={(e) => setForm((p) => ({ ...p, observacion: e.target.value }))} />
                 </div>
 
-                <div className="gridFull" style={{ color: "rgba(255,255,255,0.75)" }}>
+                <div className="gridFull fileNote">
                   <b>PDF:</b> {pdfSeleccionado?.name}
                 </div>
               </div>
@@ -757,13 +683,13 @@ function App() {
         </div>
       )}
 
-      {/* MODAL MANUAL */}
+      {/* ================= MODAL MANUAL ================= */}
       {manualOpen && (
-        <div className="modalOverlay">
-          <div className="modal">
+        <div className="modalOverlay" onMouseDown={() => setManualOpen(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modalHeader">
               <h2>Nueva orden (Manual)</h2>
-              <button className="btn btnGhost" onClick={() => setManualOpen(false)}>
+              <button className="iconBtn" onClick={() => setManualOpen(false)} aria-label="Cerrar">
                 ✕
               </button>
             </div>
@@ -772,11 +698,7 @@ function App() {
               <div className="grid">
                 <div>
                   <label className="label">N° Orden (OC)</label>
-                  <input
-                    className="input"
-                    value={manual.numeroOrden}
-                    onChange={(e) => setManual((p) => ({ ...p, numeroOrden: e.target.value }))}
-                  />
+                  <input className="input" value={manual.numeroOrden} onChange={(e) => setManual((p) => ({ ...p, numeroOrden: e.target.value }))} />
                 </div>
 
                 <div>
@@ -786,42 +708,50 @@ function App() {
 
                 <div>
                   <label className="label">Fecha doc</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={manual.fechaLlegada}
-                    onChange={(e) => setManual((p) => ({ ...p, fechaLlegada: e.target.value }))}
-                  />
+                  <input className="input" type="date" value={manual.fechaLlegada} onChange={(e) => setManual((p) => ({ ...p, fechaLlegada: e.target.value }))} />
                 </div>
 
                 <div>
                   <label className="label">Monto NETO (CLP)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={manual.montoClp}
-                    onChange={(e) => setManual((p) => ({ ...p, montoClp: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={manual.montoClp} onChange={(e) => setManual((p) => ({ ...p, montoClp: e.target.value }))} />
                 </div>
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={manual.cantidadTranspaletas}
-                    onChange={(e) => setManual((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={manual.cantidadTranspaletas} onChange={(e) => setManual((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Cliente</label>
+                  <select className="select" value={manual.cliente} onChange={(e) => setManual((p) => ({ ...p, cliente: e.target.value }))}>
+                    <option value="">(Seleccionar)</option>
+                    {CLIENTES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">Tienda</label>
+                  <input className="input" value={manual.tienda} onChange={(e) => setManual((p) => ({ ...p, tienda: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Zona</label>
+                  <select className="select" value={manual.zona} onChange={(e) => setManual((p) => ({ ...p, zona: e.target.value }))}>
+                    {ZONAS.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="gridFull">
                   <label className="label">Observación</label>
-                  <textarea
-                    className="textarea"
-                    rows={3}
-                    value={manual.observacion}
-                    onChange={(e) => setManual((p) => ({ ...p, observacion: e.target.value }))}
-                  />
+                  <textarea className="textarea" rows={3} value={manual.observacion} onChange={(e) => setManual((p) => ({ ...p, observacion: e.target.value }))} />
                 </div>
               </div>
             </div>
@@ -838,13 +768,13 @@ function App() {
         </div>
       )}
 
-      {/* MODAL EDITAR */}
+      {/* ================= MODAL EDITAR ================= */}
       {editOpen && (
-        <div className="modalOverlay">
-          <div className="modal">
+        <div className="modalOverlay" onMouseDown={() => setEditOpen(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modalHeader">
               <h2>Editar orden</h2>
-              <button className="btn btnGhost" onClick={() => setEditOpen(false)}>
+              <button className="iconBtn" onClick={() => setEditOpen(false)} aria-label="Cerrar">
                 ✕
               </button>
             </div>
@@ -853,11 +783,7 @@ function App() {
               <div className="grid">
                 <div>
                   <label className="label">N° Orden (OC)</label>
-                  <input
-                    className="input"
-                    value={edit.numeroOrden}
-                    onChange={(e) => setEdit((p) => ({ ...p, numeroOrden: e.target.value }))}
-                  />
+                  <input className="input" value={edit.numeroOrden} onChange={(e) => setEdit((p) => ({ ...p, numeroOrden: e.target.value }))} />
                 </div>
 
                 <div>
@@ -867,32 +793,45 @@ function App() {
 
                 <div>
                   <label className="label">Fecha doc</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={edit.fechaLlegada}
-                    onChange={(e) => setEdit((p) => ({ ...p, fechaLlegada: e.target.value }))}
-                  />
+                  <input className="input" type="date" value={edit.fechaLlegada} onChange={(e) => setEdit((p) => ({ ...p, fechaLlegada: e.target.value }))} />
                 </div>
 
                 <div>
                   <label className="label">Monto NETO (CLP)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={edit.montoClp}
-                    onChange={(e) => setEdit((p) => ({ ...p, montoClp: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={edit.montoClp} onChange={(e) => setEdit((p) => ({ ...p, montoClp: e.target.value }))} />
                 </div>
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={edit.cantidadTranspaletas}
-                    onChange={(e) => setEdit((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={edit.cantidadTranspaletas} onChange={(e) => setEdit((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Cliente</label>
+                  <select className="select" value={edit.cliente} onChange={(e) => setEdit((p) => ({ ...p, cliente: e.target.value }))}>
+                    <option value="">(Seleccionar)</option>
+                    {CLIENTES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">Tienda</label>
+                  <input className="input" value={edit.tienda} onChange={(e) => setEdit((p) => ({ ...p, tienda: e.target.value }))} />
+                </div>
+
+                <div>
+                  <label className="label">Zona</label>
+                  <select className="select" value={edit.zona} onChange={(e) => setEdit((p) => ({ ...p, zona: e.target.value }))}>
+                    {ZONAS.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -902,21 +841,12 @@ function App() {
 
                 <div>
                   <label className="label">N° Factura</label>
-                  <input
-                    className="input"
-                    value={edit.numeroFactura}
-                    onChange={(e) => setEdit((p) => ({ ...p, numeroFactura: e.target.value }))}
-                  />
+                  <input className="input" value={edit.numeroFactura} onChange={(e) => setEdit((p) => ({ ...p, numeroFactura: e.target.value }))} />
                 </div>
 
                 <div className="gridFull">
                   <label className="label">Observación</label>
-                  <textarea
-                    className="textarea"
-                    rows={3}
-                    value={edit.observacion}
-                    onChange={(e) => setEdit((p) => ({ ...p, observacion: e.target.value }))}
-                  />
+                  <textarea className="textarea" rows={3} value={edit.observacion} onChange={(e) => setEdit((p) => ({ ...p, observacion: e.target.value }))} />
                 </div>
               </div>
             </div>

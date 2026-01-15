@@ -10,45 +10,47 @@ public class Orden {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // OC / Número orden de compra
-    private String numeroOrden;
-
-    // OT
+    private String numeroOrden; // N° Orden (OC)
     private String ot;
 
-    // Fecha del documento (emisión) -> la guardamos aquí
-    private LocalDate fechaLlegada;
+    private LocalDate fechaLlegada; // fecha doc
 
-    // Monto NETO CLP
-    private Long montoClp;
+    private Long montoClp; // monto neto CLP
 
     @Enumerated(EnumType.STRING)
     private EstadoOrden estado;
 
-    // HES (cuando llegue)
     private String hes;
 
     private String numeroFactura;
 
-    // Observación (texto)
-    @Column(length = 1000)
+    @Column(length = 2000)
     private String observacion;
 
-    // Nombre del PDF guardado en disco
-    private String ocPdf;
+    private String zona; // Norte / Centro / Sur
 
-    // ✅ NUEVO: cantidad transpaletas (ej: 12)
     private Integer cantidadTranspaletas;
 
-    public Orden() {
-    }
+    // PDF guardado (nombre de archivo)
+    private String ocPdf;
 
+    // ====== NUEVOS CAMPOS ======
+    private String cliente; // Tottus, Sodimac, TCL, Simi, Papa Johns, Otros...
+    private String tienda; // Ej: "HC NVA LA FLOR" o nombre tienda
+    private String comuna; // Ej: La Florida
+    private String region; // Ej: Región Metropolitana
+
+    // ====== GETTERS/SETTERS ======
     public Long getId() {
         return id;
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    public String getZona() {
+        return zona;
+    }
+
+    public void setZona(String zona) {
+        this.zona = zona;
     }
 
     public String getNumeroOrden() {
@@ -99,20 +101,20 @@ public class Orden {
         this.hes = hes;
     }
 
+    public String getNumeroFactura() {
+        return numeroFactura;
+    }
+
+    public void setNumeroFactura(String numeroFactura) {
+        this.numeroFactura = numeroFactura;
+    }
+
     public String getObservacion() {
         return observacion;
     }
 
     public void setObservacion(String observacion) {
         this.observacion = observacion;
-    }
-
-    public String getOcPdf() {
-        return ocPdf;
-    }
-
-    public void setOcPdf(String ocPdf) {
-        this.ocPdf = ocPdf;
     }
 
     public Integer getCantidadTranspaletas() {
@@ -123,12 +125,43 @@ public class Orden {
         this.cantidadTranspaletas = cantidadTranspaletas;
     }
 
-    public String getNumeroFactura() {
-        return numeroFactura;
+    public String getOcPdf() {
+        return ocPdf;
     }
 
-    public void setNumeroFactura(String numeroFactura) {
-        this.numeroFactura = numeroFactura;
+    public void setOcPdf(String ocPdf) {
+        this.ocPdf = ocPdf;
     }
 
+    public String getCliente() {
+        return cliente;
+    }
+
+    public void setCliente(String cliente) {
+        this.cliente = cliente;
+    }
+
+    public String getTienda() {
+        return tienda;
+    }
+
+    public void setTienda(String tienda) {
+        this.tienda = tienda;
+    }
+
+    public String getComuna() {
+        return comuna;
+    }
+
+    public void setComuna(String comuna) {
+        this.comuna = comuna;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = region;
+    }
 }

@@ -1,7 +1,7 @@
 package cl.papa.ordenes;
 
-import cl.papa.ordenes.pdf.OcParseResult;
 import cl.papa.ordenes.pdf.OcPdfParser;
+import cl.papa.ordenes.pdf.OcParseResult;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -29,20 +29,19 @@ public class OrdenController {
     // Listar todas o por estado
     @GetMapping
     public List<Orden> listar(@RequestParam(required = false) EstadoOrden estado) {
-        if (estado == null) {
+        if (estado == null)
             return repository.findAll();
-        }
         return repository.findByEstadoOrderByFechaLlegadaAsc(estado);
     }
 
-    // Ingresar una orden (cuando llega la OC)
+    // Crear orden (manual o desde PDF)
     @PostMapping
     public Orden crear(@RequestBody Orden orden) {
         orden.setEstado(EstadoOrden.OC_RECIBIDA);
         return repository.save(orden);
     }
 
-    // Editar datos generales
+    // Editar
     @PutMapping("/{id}")
     public ResponseEntity<Orden> editar(@PathVariable Long id, @RequestBody Orden body) {
         return repository.findById(id)
@@ -55,22 +54,16 @@ public class OrdenController {
                     o.setHes(body.getHes());
                     o.setNumeroFactura(body.getNumeroFactura());
 
-                    // ✅ ESTO TE FALTABA (por eso no guardaba transpaletas)
-                    o.setCantidadTranspaletas(body.getCantidadTranspaletas());
+                    o.setCliente(body.getCliente());
+                    o.setTienda(body.getTienda());
+                    o.setZona(body.getZona());
 
-                    // (opcional) si tu front manda estado en PUT, lo permitimos
-                    // si NO quieres permitirlo, comenta la línea siguiente
-                    if (body.getEstado() != null) {
-                        o.setEstado(body.getEstado());
-                    }
-
-                    // Nota: no tocamos ocPdf acá para no pisarlo sin querer
                     return ResponseEntity.ok(repository.save(o));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Cambiar estado (avance del flujo)
+    // Cambiar estado
     @PatchMapping("/{id}/estado")
     public ResponseEntity<Orden> cambiarEstado(@PathVariable Long id, @RequestParam EstadoOrden estado) {
         return repository.findById(id)
@@ -81,22 +74,20 @@ public class OrdenController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // Eliminar (por si se ingresó mal)
+    // Eliminar
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        if (!repository.existsById(id)) {
+        if (!repository.existsById(id))
             return ResponseEntity.notFound().build();
-        }
         repository.deleteById(id);
         return ResponseEntity.noContent().build();
     }
 
-    // Subir PDF de la Orden de Compra
+    // Subir PDF OC
     @PostMapping(path = "/{id}/oc-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> subirOcPdf(@PathVariable Long id, @RequestParam("file") MultipartFile file) {
-        if (file.isEmpty()) {
+        if (file.isEmpty())
             return ResponseEntity.badRequest().body("Archivo vacío");
-        }
 
         String contentType = file.getContentType();
         if (contentType == null || !contentType.equalsIgnoreCase("application/pdf")) {
@@ -108,7 +99,6 @@ public class OrdenController {
                 Path dir = Paths.get("data", "ocs");
                 Files.createDirectories(dir);
 
-                // Nombre seguro: OC-<numeroOrden>.pdf (siempre .pdf)
                 String safeNumero = orden.getNumeroOrden().replaceAll("[^a-zA-Z0-9-_]", "_");
                 String filename = "OC-" + safeNumero + ".pdf";
 
@@ -125,7 +115,7 @@ public class OrdenController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
-    // Ver/Descargar PDF asociado a la OC
+    // Ver PDF
     @GetMapping("/{id}/oc-pdf")
     public ResponseEntity<?> verOcPdf(@PathVariable Long id) {
         return repository.findById(id).map(orden -> {
@@ -152,12 +142,11 @@ public class OrdenController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
-    // Parsear PDF (para autocompletar formulario)
+    // Parsear PDF (solo devuelve JSON parseado)
     @PostMapping(path = "/parse-oc-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> parseOcPdf(@RequestParam("file") MultipartFile file) {
-        if (file.isEmpty()) {
+        if (file.isEmpty())
             return ResponseEntity.badRequest().body("Archivo vacío");
-        }
 
         String contentType = file.getContentType();
         if (contentType == null || !contentType.equalsIgnoreCase("application/pdf")) {
