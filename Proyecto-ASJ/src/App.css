@@ -514,3 +514,13 @@ body {
 .iconDangerBtn:hover {
   background: rgba(180, 0, 0, 0.25);
 }
+
+.badgeBad {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 80, 80, 0.25);
+  background: rgba(160, 0, 0, 0.2);
+}

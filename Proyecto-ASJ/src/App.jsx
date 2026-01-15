@@ -1,6 +1,7 @@
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import OrdenesPage from "./pages/OrdenesPage";
 import EstadisticasPage from "./pages/EstadisticasPage";
+import VisitasPage from "./pages/VisitasPage";
 import "./App.css";
 
 export default function App() {
