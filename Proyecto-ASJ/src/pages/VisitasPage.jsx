@@ -24,8 +24,11 @@ function addDays(isoDate, days) {
 
 function daysBetween(fromIso, toIso) {
   if (!fromIso || !toIso) return null;
-  const a = Date.parse(fromIso);
-  const b = Date.parse(toIso);
+
+  // Aseguramos "T00:00:00" para evitar desfases de zona horaria
+  const a = Date.parse(fromIso + "T00:00:00");
+  const b = Date.parse(toIso + "T00:00:00");
+
   if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
   return Math.round((b - a) / (1000 * 60 * 60 * 24));
 }
@@ -40,12 +43,41 @@ function formatCLP(value) {
   }).format(n);
 }
 
+/**
+ * ✅ Deja SOLO la última orden por "local"
+ * Local = cliente + tienda + zona (normalizado)
+ * “Última” = fechaLlegada más reciente
+ */
+function pickUltimaPorLocal(ordenes) {
+  const map = new Map();
+
+  for (const o of ordenes) {
+    const cliente = norm(o?.cliente);
+    const tienda = norm(o?.tienda);
+    const zona = norm(o?.zona);
+
+    // clave estable (si faltan campos, queda igual, pero ideal es tenerlos)
+    const key = `${cliente}__${tienda}__${zona}`;
+
+    const curr = map.get(key);
+
+    const oMs = Date.parse((o?.fechaLlegada ?? "") + "T00:00:00") || 0;
+    const cMs = curr ? Date.parse((curr?.fechaLlegada ?? "") + "T00:00:00") || 0 : -1;
+
+    if (!curr || oMs > cMs) {
+      map.set(key, o);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 export default function VisitasPage() {
   const [ordenes, setOrdenes] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // filtros
-  const [q, setQ] = useState(""); // cliente/tienda
+  const [q, setQ] = useState(""); // cliente/tienda/OC
   const [zonaFiltro, setZonaFiltro] = useState("ALL");
   const [modo, setModo] = useState("PROXIMAS"); // PROXIMAS | VENCIDAS | TODAS
   const [sortBy, setSortBy] = useState("PROX_VISITA"); // PROX_VISITA | FECHA_TRABAJO
@@ -73,13 +105,18 @@ export default function VisitasPage() {
     cargar();
   }, []);
 
-  // armamos una “visita” por orden:
-  // fechaTrabajo = fechaLlegada (la fecha del doc / trabajo según tu uso)
+  // ✅ SOLO ÚLTIMA ORDEN ACTIVA POR LOCAL (evita duplicados)
+  const ordenesActivasPorLocal = useMemo(() => {
+    return pickUltimaPorLocal(ordenes);
+  }, [ordenes]);
+
+  // armamos una “visita” por local (basado en última orden por local):
+  // fechaTrabajo = fechaLlegada
   // proximaVisita = fechaTrabajo + 150 días
   const visitas = useMemo(() => {
-    return ordenes
+    return ordenesActivasPorLocal
       .map((o) => {
-        const fechaTrabajo = o.fechaLlegada || ""; // <- si después agregas fechaRealTrabajo, la pones aquí
+        const fechaTrabajo = o.fechaLlegada || "";
         const proximaVisita = addDays(fechaTrabajo, 150);
         const diasRestantes = proximaVisita ? daysBetween(hoyIso, proximaVisita) : null;
 
@@ -93,12 +130,12 @@ export default function VisitasPage() {
           montoClp: o.montoClp ?? null,
           fechaTrabajo,
           proximaVisita,
-          diasRestantes, // puede ser negativo si está vencida
+          diasRestantes,
           estado: o.estado ?? "",
         };
       })
-      .filter((v) => v.fechaTrabajo); // si no hay fecha, no podemos calcular
-  }, [ordenes, hoyIso]);
+      .filter((v) => v.fechaTrabajo);
+  }, [ordenesActivasPorLocal, hoyIso]);
 
   const zonasDisponibles = useMemo(() => {
     const s = new Set();
@@ -112,9 +149,13 @@ export default function VisitasPage() {
     return visitas
       .filter((v) => {
         if (qn) {
-          const hit = norm(v.cliente).includes(qn) || norm(v.tienda).includes(qn) || norm(v.numeroOrden).includes(qn);
+          const hit =
+            norm(v.cliente).includes(qn) ||
+            norm(v.tienda).includes(qn) ||
+            norm(v.numeroOrden).includes(qn);
           if (!hit) return false;
         }
+
         if (zonaFiltro !== "ALL" && norm(v.zona) !== norm(zonaFiltro)) return false;
 
         if (modo === "VENCIDAS") {
@@ -128,7 +169,11 @@ export default function VisitasPage() {
       .sort((a, b) => {
         const aKey = sortBy === "FECHA_TRABAJO" ? a.fechaTrabajo : a.proximaVisita;
         const bKey = sortBy === "FECHA_TRABAJO" ? b.fechaTrabajo : b.proximaVisita;
-        const diff = Date.parse(aKey) - Date.parse(bKey);
+
+        const aMs = Date.parse((aKey || "") + "T00:00:00") || 0;
+        const bMs = Date.parse((bKey || "") + "T00:00:00") || 0;
+
+        const diff = aMs - bMs;
         return sortDir === "asc" ? diff : -diff;
       });
   }, [visitas, qn, zonaFiltro, modo, sortBy, sortDir]);
@@ -150,7 +195,7 @@ export default function VisitasPage() {
           </div>
           <div className="brandTitle">
             <h1>VISITAS</h1>
-            <span>Planificación • próxima visita = fecha trabajo + 150 días</span>
+            <span>Planificación • próxima visita = fecha llegada + 150 días • (solo última OC por tienda)</span>
           </div>
         </div>
       </div>
@@ -187,7 +232,7 @@ export default function VisitasPage() {
 
           <select className="select" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
             <option value="PROX_VISITA">Ordenar por próxima visita</option>
-            <option value="FECHA_TRABAJO">Ordenar por fecha de trabajo</option>
+            <option value="FECHA_TRABAJO">Ordenar por fecha llegada</option>
           </select>
 
           <button className="btn" onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}>
@@ -218,7 +263,7 @@ export default function VisitasPage() {
                 <th>Tienda</th>
                 <th>Zona</th>
                 <th>Transpaletas</th>
-                <th>Fecha trabajo</th>
+                <th>Fecha llegada</th>
                 <th>Próxima visita (+150)</th>
                 <th>Días restantes</th>
                 <th>OC</th>

@@ -13,7 +13,7 @@ const ESTADOS = [
   { key: "PAGADA", label: "Pagadas" },
 ];
 
-// ✅ "Otro" (no "Otros") para poder escribir el nombre real
+
 const CLIENTES = ["Tottus", "Sodimac", "TCL", "Simi", "Papa Johns", "Otro"];
 const ZONAS = ["Norte", "Centro", "Sur"];
 
