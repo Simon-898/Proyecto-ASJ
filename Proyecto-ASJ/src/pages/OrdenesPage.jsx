@@ -13,7 +13,6 @@ const ESTADOS = [
   { key: "PAGADA", label: "Pagadas" },
 ];
 
-
 const CLIENTES = ["Tottus", "Sodimac", "TCL", "Simi", "Papa Johns", "Otro"];
 const ZONAS = ["Norte", "Centro", "Sur"];
 
@@ -58,6 +57,13 @@ const emptyForm = () => ({
   observacion: "",
 });
 
+function csvEscape(v) {
+  const s = (v ?? "").toString();
+  // Excel friendly: quote + escape quotes
+  const safe = s.replaceAll('"', '""');
+  return `"${safe}"`;
+}
+
 export default function OrdenesPage() {
   const [estado, setEstado] = useState("ALL");
   const [ordenes, setOrdenes] = useState([]);
@@ -99,6 +105,37 @@ export default function OrdenesPage() {
   // ===== SELECCIÓN =====
   const [seleccion, setSeleccion] = useState(new Set());
 
+  // ===== BACKUP / RESTORE ZIP =====
+  const restoreZipRef = useRef(null);
+  const [restoring, setRestoring] = useState(false);
+
+  // ===== DETALLE =====
+  const [detalleOpen, setDetalleOpen] = useState(false);
+  const [detalleOrden, setDetalleOrden] = useState(null);
+
+  // ===== INDICADOR CAMBIOS (basado en “respaldado o no”) =====
+  // lastMutationAt: cuando cambió algo (crear/editar/eliminar/avanzar/restaurar)
+  // lastBackupAt: cuando el usuario apretó “Respaldar (ZIP)”
+  const [lastMutationAt, setLastMutationAt] = useState(0);
+  const [lastBackupAt, setLastBackupAt] = useState(0);
+
+  const pendienteRespaldo = lastMutationAt > lastBackupAt;
+
+  const markMutation = () => setLastMutationAt(Date.now());
+  const markBackup = () => setLastBackupAt(Date.now());
+
+  // Confirmación al salir (browser prompt nativo)
+  useEffect(() => {
+    const handler = (e) => {
+      if (!pendienteRespaldo) return;
+      // OJO: no se puede descargar backup “automático” aquí (los browsers bloquean async)
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [pendienteRespaldo]);
+
   const toggleSeleccion = (id) => {
     setSeleccion((prev) => {
       const n = new Set(prev);
@@ -117,27 +154,50 @@ export default function OrdenesPage() {
   };
 
   const exportarCSV = (items) => {
-    const rows = items
-      .filter((o) => seleccion.has(o.id))
-      .map((o) => ({
-        "N° Orden (OC)": o.numeroOrden,
-        OT: o.ot,
-        "Fecha doc": o.fechaLlegada,
-        "Monto Neto": o.montoClp,
-        Transpaletas: o.cantidadTranspaletas ?? "",
-        HES: o.hes ?? "",
-        Cliente: o.cliente ?? "",
-        Tienda: o.tienda ?? "",
-        Zona: o.zona ?? "",
-        "N° Factura": o.numeroFactura ?? "",
-        Estado: o.estado,
-        Observación: o.observacion ?? "",
-      }));
-
+    const rows = items.filter((o) => seleccion.has(o.id));
     if (rows.length === 0) return;
 
-    const headers = Object.keys(rows[0]).join(";");
-    const csv = [headers, ...rows.map((r) => Object.values(r).join(";"))].join("\n");
+    const header = [
+      "N° Orden (OC)",
+      "OT",
+      "Fecha doc",
+      "Monto Neto",
+      "Transpaletas",
+      "HES",
+      "Cliente",
+      "Tienda",
+      "Zona",
+      "N° Factura",
+      "Estado",
+      "Observación",
+    ];
+
+    const sep = ";";
+
+    const lines = [
+      header.map(csvEscape).join(sep),
+      ...rows.map((o) =>
+        [
+          o.numeroOrden,
+          o.ot,
+          o.fechaLlegada,
+          o.montoClp,
+          o.cantidadTranspaletas ?? "",
+          o.hes ?? "",
+          o.cliente ?? "",
+          o.tienda ?? "",
+          o.zona ?? "",
+          o.numeroFactura ?? "",
+          o.estado ?? "",
+          o.observacion ?? "",
+        ]
+          .map(csvEscape)
+          .join(sep)
+      ),
+    ];
+
+    // ✅ BOM UTF-8 para que Excel lea tildes bien
+    const csv = "\ufeff" + lines.join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -151,7 +211,54 @@ export default function OrdenesPage() {
   };
 
   const respaldarZIP = () => {
+    // abrir descarga
     window.open(`${API}/backup`, "_blank");
+    // marcar respaldado (para el indicador)
+    markBackup();
+  };
+
+  const abrirRestoreZip = () => {
+    if (restoring) return;
+    restoreZipRef.current?.click();
+  };
+
+  const restaurarZIP = async (file) => {
+    if (!file) return;
+    const name = (file.name || "").toLowerCase();
+    if (!name.endsWith(".zip")) {
+      alert("Selecciona un archivo .zip (respaldo).");
+      return;
+    }
+
+    const ok = confirm(
+      "Esto reemplazará la base de datos y los PDFs (si vienen en el ZIP).\n\n" +
+        "RECOMENDADO: después de restaurar, cierra y abre el programa.\n\n" +
+        "¿Deseas continuar?"
+    );
+    if (!ok) return;
+
+    try {
+      setRestoring(true);
+      const fd = new FormData();
+      fd.append("file", file);
+
+      const res = await fetch(`${API}/restore`, { method: "POST", body: fd });
+      const text = await res.text();
+
+      if (!res.ok) {
+        alert("Error restaurando: " + (text || "Error"));
+        return;
+      }
+
+      alert((text || "OK - Restaurado") + "\n\nAhora cierra y abre el programa.");
+      markMutation();
+      cargar();
+    } catch (e) {
+      console.error(e);
+      alert("Error subiendo el respaldo.");
+    } finally {
+      setRestoring(false);
+    }
   };
 
   const cargar = () => {
@@ -199,6 +306,7 @@ export default function OrdenesPage() {
         }),
       });
 
+      markMutation();
       cargar();
       return;
     }
@@ -228,11 +336,13 @@ export default function OrdenesPage() {
         }),
       });
 
+      markMutation();
       cargar();
       return;
     }
 
     await fetch(`${API}/${orden.id}/estado?estado=${next}`, { method: "PATCH" });
+    markMutation();
     cargar();
   };
 
@@ -337,6 +447,7 @@ export default function OrdenesPage() {
       setForm(emptyForm());
 
       setEstado("OC_RECIBIDA");
+      markMutation();
       setTimeout(() => cargar(), 150);
     } catch (e) {
       console.error(e);
@@ -410,6 +521,7 @@ export default function OrdenesPage() {
       setManualPdf(null);
 
       setEstado("OC_RECIBIDA");
+      markMutation();
       setTimeout(() => cargar(), 150);
     } catch (e) {
       console.error(e);
@@ -423,10 +535,9 @@ export default function OrdenesPage() {
   const abrirEditar = (o) => {
     setEditOrden(o);
 
-    // ✅ si el cliente NO está en lista, lo cargamos como "Otro" para editarlo
     const isKnown = CLIENTES.includes(o.cliente);
     const clienteEdit = isKnown ? (o.cliente ?? "") : "Otro";
-    const clienteOtroEdit = isKnown ? "" : (o.cliente ?? "");
+    const clienteOtroEdit = isKnown ? "" : o.cliente ?? "";
 
     setEdit({
       ...emptyForm(),
@@ -487,6 +598,7 @@ export default function OrdenesPage() {
 
       setEditOpen(false);
       setEditOrden(null);
+      markMutation();
       cargar();
       alert("Cambios guardados ✅");
     } catch (e) {
@@ -506,6 +618,7 @@ export default function OrdenesPage() {
       const res = await fetch(`${API}/${o.id}`, { method: "DELETE" });
       if (!res.ok) return alert("Error eliminando: " + (await res.text()));
       alert("Orden eliminada 🗑️");
+      markMutation();
       cargar();
     } catch (e) {
       console.error(e);
@@ -513,7 +626,27 @@ export default function OrdenesPage() {
     }
   };
 
-  const mostrarColFactura = estado === "FACTURADA" || estado === "PAGADA" || estado === "ALL";
+  // ===== DETALLE =====
+  const abrirDetalle = (o) => {
+    setDetalleOrden(o);
+    setDetalleOpen(true);
+  };
+
+  const copiarCampo = async (label, value) => {
+    try {
+      await navigator.clipboard.writeText(String(value ?? ""));
+      alert(`Copiado: ${label}`);
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = String(value ?? "");
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      alert(`Copiado: ${label}`);
+    }
+  };
 
   const zonasDisponibles = useMemo(() => {
     const s = new Set();
@@ -556,6 +689,14 @@ export default function OrdenesPage() {
           <div className="brandTitle">
             <h1>ÓRDENES</h1>
             <span>Gestión local de Órdenes de Compra • ASJ Group</span>
+          </div>
+
+          {/* ✅ indicador real */}
+          <div style={{ marginLeft: "auto" }}>
+            <div className={`saveStatus ${pendienteRespaldo ? "pulse" : ""}`}>
+              <span className={`statusDot ${pendienteRespaldo ? "warn" : "ok"}`} />
+              {pendienteRespaldo ? "Pendiente respaldo" : "Guardado"}
+            </div>
           </div>
         </div>
       </div>
@@ -608,6 +749,22 @@ export default function OrdenesPage() {
             <button className="btn" onClick={respaldarZIP}>
               Respaldar (ZIP)
             </button>
+
+            <button className="btn" onClick={abrirRestoreZip} disabled={restoring}>
+              {restoring ? "Cargando..." : "Cargar respaldo (ZIP)"}
+            </button>
+
+            <input
+              ref={restoreZipRef}
+              type="file"
+              accept=".zip,application/zip"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                restaurarZIP(file);
+              }}
+            />
           </div>
 
           <input
@@ -651,9 +808,12 @@ export default function OrdenesPage() {
                 <th>Cliente</th>
                 <th>Tienda</th>
                 <th>Zona</th>
-                {mostrarColFactura && <th>N° Factura</th>}
+                <th>N° Factura</th>
                 <th>OC</th>
                 <th>Acción</th>
+
+                {/* ✅ SIEMPRE visibles */}
+                <th>Detalle</th>
                 <th>Editar</th>
                 <th className="thIcon">🗑️</th>
               </tr>
@@ -675,7 +835,7 @@ export default function OrdenesPage() {
                   <td>{o.cliente ?? "-"}</td>
                   <td>{o.tienda ?? "-"}</td>
                   <td>{o.zona ?? "-"}</td>
-                  {mostrarColFactura && <td>{o.numeroFactura ?? "-"}</td>}
+                  <td>{o.numeroFactura ?? "-"}</td>
 
                   <td>
                     {o.ocPdf ? (
@@ -695,6 +855,12 @@ export default function OrdenesPage() {
                     ) : (
                       <span className="badgeOk">Finalizada ✓</span>
                     )}
+                  </td>
+
+                  <td>
+                    <button className="btn btnSmall" onClick={() => abrirDetalle(o)}>
+                      Ver
+                    </button>
                   </td>
 
                   <td>
@@ -740,12 +906,7 @@ export default function OrdenesPage() {
 
                 <div>
                   <label className="label">Fecha del documento</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={form.fechaLlegada}
-                    onChange={(e) => setForm((p) => ({ ...p, fechaLlegada: e.target.value }))}
-                  />
+                  <input className="input" type="date" value={form.fechaLlegada} onChange={(e) => setForm((p) => ({ ...p, fechaLlegada: e.target.value }))} />
                 </div>
 
                 <div>
@@ -755,15 +916,9 @@ export default function OrdenesPage() {
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={form.cantidadTranspaletas}
-                    onChange={(e) => setForm((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={form.cantidadTranspaletas} onChange={(e) => setForm((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
                 </div>
 
-                {/* ✅ Cliente con "Otro" editable también en PDF */}
                 <div>
                   <label className="label">Cliente</label>
                   <select
@@ -783,13 +938,7 @@ export default function OrdenesPage() {
                   </select>
 
                   {form.cliente === "Otro" && (
-                    <input
-                      className="input"
-                      style={{ marginTop: 8 }}
-                      placeholder="Escribe el cliente..."
-                      value={form.clienteOtro}
-                      onChange={(e) => setForm((p) => ({ ...p, clienteOtro: e.target.value }))}
-                    />
+                    <input className="input" style={{ marginTop: 8 }} placeholder="Escribe el cliente..." value={form.clienteOtro} onChange={(e) => setForm((p) => ({ ...p, clienteOtro: e.target.value }))} />
                   )}
                 </div>
 
@@ -834,7 +983,8 @@ export default function OrdenesPage() {
 
       {/* ================= MODAL MANUAL ================= */}
       {manualOpen && (
-        <div className="modalOverlay" onMouseDown={() => setManualOpen(false)}>
+        // ✅ NO cerrar al click afuera
+        <div className="modalOverlay">
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modalHeader">
               <h2>Nueva orden (Manual)</h2>
@@ -857,12 +1007,7 @@ export default function OrdenesPage() {
 
                 <div>
                   <label className="label">Fecha doc</label>
-                  <input
-                    className="input"
-                    type="date"
-                    value={manual.fechaLlegada}
-                    onChange={(e) => setManual((p) => ({ ...p, fechaLlegada: e.target.value }))}
-                  />
+                  <input className="input" type="date" value={manual.fechaLlegada} onChange={(e) => setManual((p) => ({ ...p, fechaLlegada: e.target.value }))} />
                 </div>
 
                 <div>
@@ -872,15 +1017,9 @@ export default function OrdenesPage() {
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={manual.cantidadTranspaletas}
-                    onChange={(e) => setManual((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={manual.cantidadTranspaletas} onChange={(e) => setManual((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
                 </div>
 
-                {/* ✅ Cliente con Otro editable */}
                 <div>
                   <label className="label">Cliente</label>
                   <select
@@ -900,13 +1039,7 @@ export default function OrdenesPage() {
                   </select>
 
                   {manual.cliente === "Otro" && (
-                    <input
-                      className="input"
-                      style={{ marginTop: 8 }}
-                      placeholder="Escribe el cliente..."
-                      value={manual.clienteOtro}
-                      onChange={(e) => setManual((p) => ({ ...p, clienteOtro: e.target.value }))}
-                    />
+                    <input className="input" style={{ marginTop: 8 }} placeholder="Escribe el cliente..." value={manual.clienteOtro} onChange={(e) => setManual((p) => ({ ...p, clienteOtro: e.target.value }))} />
                   )}
                 </div>
 
@@ -926,7 +1059,6 @@ export default function OrdenesPage() {
                   </select>
                 </div>
 
-                {/* ✅ PDF opcional en manual */}
                 <div className="gridFull">
                   <label className="label">PDF (opcional)</label>
 
@@ -1013,15 +1145,9 @@ export default function OrdenesPage() {
 
                 <div>
                   <label className="label">Transpaletas</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={edit.cantidadTranspaletas}
-                    onChange={(e) => setEdit((p) => ({ ...p, cantidadTranspaletas: e.target.value }))}
-                  />
+                  <input className="input" type="number" value={edit.cantidadTranspaletas} onChange={(e) => setEdit((p) => ({ ...p, cantidadTranspaletas: e.target.value }))} />
                 </div>
 
-                {/* ✅ Cliente editable */}
                 <div>
                   <label className="label">Cliente</label>
                   <select
@@ -1041,13 +1167,7 @@ export default function OrdenesPage() {
                   </select>
 
                   {edit.cliente === "Otro" && (
-                    <input
-                      className="input"
-                      style={{ marginTop: 8 }}
-                      placeholder="Escribe el cliente..."
-                      value={edit.clienteOtro}
-                      onChange={(e) => setEdit((p) => ({ ...p, clienteOtro: e.target.value }))}
-                    />
+                    <input className="input" style={{ marginTop: 8 }} placeholder="Escribe el cliente..." value={edit.clienteOtro} onChange={(e) => setEdit((p) => ({ ...p, clienteOtro: e.target.value }))} />
                   )}
                 </div>
 
@@ -1090,6 +1210,55 @@ export default function OrdenesPage() {
               </button>
               <button className="btn btnPrimary" onClick={guardarEditar} disabled={editSaving}>
                 {editSaving ? "Guardando..." : "Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL DETALLE ================= */}
+      {detalleOpen && detalleOrden && (
+        <div className="modalOverlay" onMouseDown={() => setDetalleOpen(false)}>
+          <div className="modal modalDetail" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modalHeader">
+              <h2>Detalle orden</h2>
+              <button className="iconBtn" onClick={() => setDetalleOpen(false)} aria-label="Cerrar">
+                ✕
+              </button>
+            </div>
+
+            <div className="modalBody">
+              <div className="detailGrid">
+                {[
+                  ["OC", detalleOrden.numeroOrden],
+                  ["OT", detalleOrden.ot],
+                  ["Fecha doc", detalleOrden.fechaLlegada],
+                  ["Monto", formatCLP(detalleOrden.montoClp)],
+                  ["Transpaletas", detalleOrden.cantidadTranspaletas ?? "-"],
+                  ["HES", detalleOrden.hes ?? "-"],
+                  ["Cliente", detalleOrden.cliente ?? "-"],
+                  ["Tienda", detalleOrden.tienda ?? "-"],
+                  ["Zona", detalleOrden.zona ?? "-"],
+                  ["Factura", detalleOrden.numeroFactura ?? "-"],
+                  ["Estado", detalleOrden.estado ?? "-"],
+                  ["Observación", detalleOrden.observacion ?? "-"],
+                ].map(([label, value]) => (
+                  <div className="detailRow" key={label}>
+                    <div className="detailLabel">{label}</div>
+                    <div className="detailValueWrap">
+                      <div className="detailValue">{value}</div>
+                      <button className="btn btnSmall" type="button" onClick={() => copiarCampo(label, value)}>
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="modalFooter">
+              <button className="btn btnPrimary" onClick={() => setDetalleOpen(false)}>
+                Cerrar
               </button>
             </div>
           </div>

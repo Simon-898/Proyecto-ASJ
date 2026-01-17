@@ -524,3 +524,162 @@ body {
   border: 1px solid rgba(255, 80, 80, 0.25);
   background: rgba(160, 0, 0, 0.2);
 }
+
+.saveStatus{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 12px;
+  border-radius:999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.85);
+  font-size: 13px;
+}
+
+.saveStatus.pulse{
+  box-shadow: 0 0 0 6px rgba(255,255,255,0.06);
+}
+
+.statusDot{
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  display:inline-block;
+}
+
+.statusDot.ok{
+  background: #27d17f;
+  box-shadow: 0 0 0 3px rgba(39,209,127,0.15);
+}
+
+.statusDot.warn{
+  background: #ffb020;
+  box-shadow: 0 0 0 3px rgba(255,176,32,0.18);
+}
+
+/* ✅ la tabla ya NO se corta: ahora tiene scroll horizontal */
+.tableWrap{
+  overflow-x: auto;       /* <-- clave */
+  overflow-y: hidden;
+}
+
+.table{
+  min-width: 1250px;      /* ajusta si quieres más */
+}
+
+/* (opcional) que los botones no rompan la fila */
+.table td{
+  vertical-align: middle;
+}
+
+/* ✅ modal detalle más lindo + copiar por campo */
+.modal.modalDetail{
+  width: min(760px, 96vw);
+}
+
+.detailGrid{
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.detailRow{
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(0,0,0,.16);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.detailLabel{
+  font-size: 12px;
+  color: rgba(255,255,255,.65);
+  margin-bottom: 6px;
+}
+
+.detailValueWrap{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detailValue{
+  color: rgba(255,255,255,.92);
+  user-select: text;      /* ✅ puedes seleccionar solo lo que quieres */
+  overflow-wrap: anywhere;/* ✅ observación larga no rompe feo */
+}
+
+/* ===== MODAL DETALLE (mejor diseño) ===== */
+.modal.modalDetail{
+  width: min(900px, 96vw);
+}
+
+/* 2 columnas, compacto */
+.detailGrid{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Tarjeta por campo */
+.detailRow{
+  border: 1px solid rgba(255,255,255,.08);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(0,0,0,.14));
+  border-radius: 16px;
+  padding: 12px 12px;
+}
+
+/* Encabezado del campo + botón copiar */
+.detailTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom: 8px;
+}
+
+.detailLabel{
+  font-size: 12px;
+  color: rgba(255,255,255,.62);
+  letter-spacing: .2px;
+  margin: 0;
+}
+
+/* Valor grande y seleccionable */
+.detailValue{
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(255,255,255,.92);
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+
+/* Botón copiar mini */
+.detailCopyBtn{
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.90);
+  cursor: pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.detailCopyBtn:hover{
+  background: rgba(255,255,255,.10);
+}
+
+/* Observación ocupa toda la fila */
+.detailRow.full{
+  grid-column: 1 / -1;
+}
+
+/* En pantallas chicas, 1 columna */
+@media (max-width: 720px){
+  .detailGrid{
+    grid-template-columns: 1fr;
+  }
+}
