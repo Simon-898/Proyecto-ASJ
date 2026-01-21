@@ -683,3 +683,38 @@ body {
     grid-template-columns: 1fr;
   }
 }
+/* =========================
+   INPUTS ACCESIBLES (PAPÁ)
+   ========================= */
+
+/* Inputs, selects y textarea */
+input,
+select,
+textarea {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #b5b5b5;
+  font-size: 16px;
+}
+
+/* Placeholder */
+input::placeholder,
+textarea::placeholder {
+  color: #555555;
+}
+
+/* Select options */
+select option {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+/* Focus (cuando hace click) */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #2563eb; /* azul */
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+

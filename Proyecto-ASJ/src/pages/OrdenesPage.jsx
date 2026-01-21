@@ -13,7 +13,7 @@ const ESTADOS = [
   { key: "PAGADA", label: "Pagadas" },
 ];
 
-const CLIENTES = ["Tottus", "Sodimac", "TCL", "Simi", "Papa Johns", "Otro"];
+const CLIENTES = ["Tottus", "Sodimac", "TCL", "Simi", "Papa Johns", "Ikea", "Otro"];
 const ZONAS = ["Norte", "Centro", "Sur"];
 
 const SIGUIENTE = {
