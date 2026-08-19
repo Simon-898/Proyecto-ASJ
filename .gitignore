@@ -1,0 +1,7 @@
+# Exclude Java Runtime Environment (JRE) directories
+**/jre/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
